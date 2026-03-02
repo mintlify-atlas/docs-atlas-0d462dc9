@@ -38,9 +38,11 @@
             "pages": [
               "concepts/agents",
               "concepts/threads",
+              "concepts/projects",
               "concepts/tools",
               "concepts/sandboxes",
-              "concepts/mcp"
+              "concepts/mcp",
+              "concepts/templates"
             ]
           },
           {
@@ -79,7 +81,9 @@
               "features/memory",
               "features/triggers",
               "features/analytics",
-              "features/notifications"
+              "features/notifications",
+              "features/billing",
+              "features/referrals"
             ]
           },
           {

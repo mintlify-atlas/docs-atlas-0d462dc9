@@ -1,0 +1,412 @@
+---
+title: 'Agent Templates & Marketplace'
+description: 'Share and discover pre-configured AI agents through the Kortix Marketplace'
+---
+
+## Overview
+
+The Kortix Marketplace is a platform for sharing and discovering agent templates. Templates allow you to package an agent's configuration—including system prompts, tools, triggers, and settings—so others can install and use them instantly.
+
+## What is an Agent Template?
+
+An agent template is a snapshot of an agent's configuration that can be:
+
+- **Created** from any of your existing agents
+- **Published** to the marketplace for public discovery
+- **Installed** by other users to create a new agent with the same configuration
+- **Customized** during installation to fit specific needs
+
+<Note>
+Templates capture the agent's configuration, not its conversation history or learned behavior. Each installation creates a fresh agent instance.
+</Note>
+
+## Template Structure
+
+Templates contain the following configuration:
+
+### Core Configuration
+
+<ResponseField name="system_prompt" type="string" required>
+  The agent's instruction set and personality
+</ResponseField>
+
+<ResponseField name="model" type="string">
+  The AI model used (e.g., "claude-3-5-sonnet-20241022")
+</ResponseField>
+
+<ResponseField name="tools" type="object">
+  Configured tools including:
+  - **agentpress**: Built-in Kortix tools (Read, Write, Bash, etc.)
+  - **mcp**: MCP server integrations
+  - **custom_mcp**: Custom MCP configurations
+</ResponseField>
+
+<ResponseField name="triggers" type="array">
+  Automated workflow triggers (scheduled, webhook, Composio integrations)
+</ResponseField>
+
+### Metadata
+
+<ResponseField name="name" type="string" required>
+  Display name for the template
+</ResponseField>
+
+<ResponseField name="tags" type="array">
+  Searchable tags for categorization
+</ResponseField>
+
+<ResponseField name="usage_examples" type="array">
+  Example conversations showing how to use the agent
+</ResponseField>
+
+<ResponseField name="icon_name" type="string">
+  Visual icon identifier
+</ResponseField>
+
+## Creating Templates
+
+You can create a template from any of your custom agents.
+
+### Create from an Agent
+
+```python
+POST /api/v1/templates
+{
+  "agent_id": "your-agent-id",
+  "make_public": false,
+  "tags": ["productivity", "coding"],
+  "usage_examples": [
+    {
+      "role": "user",
+      "content": "Help me write a Python script"
+    },
+    {
+      "role": "assistant",
+      "content": "I'll help you create a Python script..."
+    }
+  ]
+}
+```
+
+### What Gets Captured
+
+When creating a template, the system captures:
+
+✅ **Included**:
+- System prompt
+- Model selection
+- Tool configurations (which tools are enabled)
+- Trigger configurations (structure and variables)
+- Agent appearance (icon, colors)
+- Metadata
+
+❌ **Excluded**:
+- API keys and credentials
+- Conversation history
+- User-specific data
+- Actual MCP profile connections
+
+```python
+# From backend sanitization logic
+def _sanitize_config_for_template(config: Dict[str, Any]) -> Dict[str, Any]:
+    # Removes sensitive data like profile_ids, API keys, etc.
+    # Preserves structure: which tools are enabled, trigger fields needed
+    # Returns clean configuration safe for sharing
+```
+
+<Warning>
+Never create templates from agents containing sensitive credentials or proprietary system prompts. Always review before publishing.
+</Warning>
+
+## Publishing to Marketplace
+
+Make your template discoverable by publishing it to the public marketplace.
+
+### Publish a Template
+
+```python
+POST /api/v1/templates/{template_id}/publish
+{
+  "tags": ["data-analysis", "python"],
+  "usage_examples": [...]
+}
+```
+
+Once published:
+- Template appears in marketplace searches
+- Download counter starts tracking installs
+- Other users can discover and install it
+- You can still unpublish or update it later
+
+### Unpublish a Template
+
+```python
+POST /api/v1/templates/{template_id}/unpublish
+```
+
+Unpublishing removes the template from public view but doesn't delete it.
+
+## Installing Templates
+
+Discover and install templates from the marketplace to create new agents.
+
+### Browse Marketplace
+
+```python
+GET /api/v1/templates/marketplace
+  ?page=1
+  &limit=20
+  &search=coding
+  &tags=python,automation
+  &is_kortix_team=true
+  &sort_by=download_count
+```
+
+<ParamField query="search" type="string">
+  Search term for template names
+</ParamField>
+
+<ParamField query="tags" type="string">
+  Comma-separated tags to filter by
+</ParamField>
+
+<ParamField query="is_kortix_team" type="boolean">
+  Filter for official Kortix templates
+</ParamField>
+
+<ParamField query="sort_by" type="string" default="download_count">
+  Sort by: `download_count`, `newest`, or `name`
+</ParamField>
+
+### Installation Process
+
+Installing a template may require configuration:
+
+#### 1. Check Requirements
+
+First, check if the template needs credentials or custom configurations:
+
+```python
+POST /api/v1/templates/install
+{
+  "template_id": "template-uuid",
+  "instance_name": "My Research Assistant"
+}
+
+# Response if configs needed:
+{
+  "status": "configs_required",
+  "missing_regular_credentials": [
+    {
+      "qualified_name": "brave-search",
+      "display_name": "Brave Search",
+      "required_config": ["api_key"]
+    }
+  ],
+  "missing_custom_configs": [
+    {
+      "qualified_name": "custom_sse_myapi",
+      "display_name": "My API",
+      "required_config": ["url"],
+      "custom_type": "sse"
+    }
+  ],
+  "missing_trigger_variables": {
+    "trigger_0": {
+      "trigger_name": "Daily Summary",
+      "variables": ["email", "timezone"]
+    }
+  }
+}
+```
+
+#### 2. Provide Configurations
+
+If credentials or configs are needed, provide them:
+
+```python
+POST /api/v1/templates/install
+{
+  "template_id": "template-uuid",
+  "instance_name": "My Research Assistant",
+  "profile_mappings": {
+    "brave-search": "your-profile-id"
+  },
+  "custom_mcp_configs": {
+    "custom_sse_myapi": {
+      "url": "https://api.example.com/mcp"
+    }
+  },
+  "trigger_variables": {
+    "trigger_0": {
+      "email": "user@example.com",
+      "timezone": "America/New_York"
+    }
+  },
+  "custom_system_prompt": "Custom instructions..."
+}
+
+# Success response:
+{
+  "status": "installed",
+  "instance_id": "new-agent-uuid",
+  "name": "My Research Assistant"
+}
+```
+
+<Info>
+You can customize the system prompt during installation while keeping all other template configurations.
+</Info>
+
+### Auto-Mapping Credentials
+
+The installation process attempts to automatically map required credentials to your existing profiles:
+
+```python
+# From installation_service.py
+async def _auto_map_profiles(
+    requirements: List[MCPRequirementValue],
+    account_id: str
+) -> Dict[str, str]:
+    # Automatically finds your default profile for each required credential
+    # Reduces manual configuration for common tools
+```
+
+If you have a default profile for a required tool (e.g., Brave Search), it will be used automatically.
+
+## Kortix Official Templates
+
+Kortix team templates are curated, high-quality agents for common use cases.
+
+### Browse Official Templates
+
+```python
+GET /api/v1/templates/kortix-all
+```
+
+These templates:
+- Are verified and maintained by Kortix
+- Showcase best practices
+- Are optimized for performance
+- Include comprehensive usage examples
+
+## Managing Your Templates
+
+### View Your Templates
+
+```python
+GET /api/v1/templates/my
+  ?page=1
+  &limit=20
+  &search=assistant
+  &sort_by=created_at
+```
+
+### Delete a Template
+
+```python
+DELETE /api/v1/templates/{template_id}
+```
+
+<Warning>
+Deleting a template is permanent. Users who previously installed it will keep their agent instances, but the template will no longer be discoverable.
+</Warning>
+
+## Template Requirements
+
+Templates can require various types of configuration:
+
+### MCP Server Requirements
+
+```typescript
+{
+  "qualified_name": "brave-search",
+  "display_name": "Brave Search",
+  "enabled_tools": ["brave_web_search", "brave_local_search"],
+  "required_config": ["api_key"]
+}
+```
+
+### Custom MCP Requirements
+
+```typescript
+{
+  "qualified_name": "custom_sse_myapi",
+  "display_name": "My Custom API",
+  "custom_type": "sse",
+  "required_config": ["url"]
+}
+```
+
+### Composio Integrations
+
+```typescript
+{
+  "qualified_name": "composio.github",
+  "display_name": "GitHub",
+  "toolkit_slug": "github",
+  "source": "trigger"
+}
+```
+
+### Trigger Variables
+
+Triggers can include template variables that users fill in during installation:
+
+```typescript
+// In template:
+"agent_prompt": "Send daily summary to {{email}} at {{time}}"
+
+// During installation:
+"trigger_variables": {
+  "trigger_0": {
+    "email": "user@example.com",
+    "time": "9:00 AM"
+  }
+}
+```
+
+## Download Tracking
+
+Templates track how many times they've been installed:
+
+```python
+# Automatically incremented on successful installation
+await increment_template_download_count(template_id)
+```
+
+This helps users discover popular, proven templates.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Write Clear Descriptions">
+    Use descriptive names and add detailed usage examples to help users understand what your template does
+  </Accordion>
+
+  <Accordion title="Tag Appropriately">
+    Add relevant tags to make your template discoverable (e.g., "productivity", "coding", "research")
+  </Accordion>
+
+  <Accordion title="Include Usage Examples">
+    Provide 2-3 example conversations showing how to use the agent effectively
+  </Accordion>
+
+  <Accordion title="Test Before Publishing">
+    Install your own template to ensure the configuration works correctly
+  </Accordion>
+
+  <Accordion title="Minimize Required Credentials">
+    Templates with fewer required credentials are easier to install and more popular
+  </Accordion>
+
+  <Accordion title="Keep Templates Updated">
+    If you improve an agent, consider updating or creating a new version of the template
+  </Accordion>
+</AccordionGroup>
+
+## Related Features
+
+- [Agent Triggers](/features/triggers) - Automate agent workflows
+- [MCP Servers](/concepts/mcp-servers) - Extend agents with external tools
+- [Billing](/features/billing) - Agent limits by subscription tier

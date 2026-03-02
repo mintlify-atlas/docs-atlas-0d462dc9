@@ -1,0 +1,472 @@
+---
+title: 'Billing & Subscriptions'
+description: 'Understand Kortix pricing, credit system, and subscription tiers'
+---
+
+## Overview
+
+Kortix uses a credit-based billing system combined with subscription tiers. Credits are consumed as you use AI models and features, while your subscription tier determines your monthly credit allocation, feature access, and usage limits.
+
+## Credit System
+
+Credits are the currency of Kortix usage.
+
+### How Credits Work
+
+- **1 credit = $0.01 USD** (100 credits per dollar)
+- Credits are consumed based on AI model usage (token consumption)
+- Different models have different per-token costs
+- Credits are deducted in real-time as agents run
+
+<Info>
+Kortix applies a 1.2x multiplier to base model costs to cover platform infrastructure, tooling, and support.
+</Info>
+
+### Credit Pricing
+
+```python
+# From backend configuration
+CREDITS_PER_DOLLAR = 100
+TOKEN_PRICE_MULTIPLIER = 1.2  # 20% markup on base model costs
+MINIMUM_CREDIT_FOR_RUN = 0.01  # Minimum credit balance needed
+```
+
+Example token costs (multiplier applied):
+- **Claude 3.5 Haiku**: ~$0.00024 per 1K tokens (input)
+- **Claude 3.5 Sonnet**: ~$0.0036 per 1K tokens (input)
+- **GPT-4 Turbo**: Varies by model pricing
+
+<Note>
+Actual costs depend on current model pricing from providers (Anthropic, OpenAI, etc.) with the 1.2x platform multiplier applied.
+</Note>
+
+## Subscription Tiers
+
+Choose a tier based on your usage needs and feature requirements.
+
+### None (No Subscription)
+
+**Price**: Free
+
+<ResponseField name="Monthly Credits" type="number">0</ResponseField>
+<ResponseField name="Models" type="string">Haiku only</ResponseField>
+<ResponseField name="Projects" type="number">0</ResponseField>
+<ResponseField name="Threads" type="number">0</ResponseField>
+<ResponseField name="Concurrent Runs" type="number">0</ResponseField>
+<ResponseField name="Custom Workers" type="number">0</ResponseField>
+<ResponseField name="Scheduled Triggers" type="number">0</ResponseField>
+<ResponseField name="App Triggers" type="number">0</ResponseField>
+<ResponseField name="Memory" type="object">
+  Disabled
+</ResponseField>
+<ResponseField name="Can Purchase Credits" type="boolean">false</ResponseField>
+
+<Warning>
+The "None" tier provides no usable functionality. It's the default state before selecting a subscription.
+</Warning>
+
+---
+
+### Basic (Free Tier)
+
+**Price**: $0/month + **$3.00 credit refill every 168 hours (7 days)**
+
+<ResponseField name="Monthly Credits" type="number">$0.00 (rolling 7-day refill)</ResponseField>
+<ResponseField name="Credit Refill" type="string">$3.00 every 168 hours</ResponseField>
+<ResponseField name="Models" type="string">Haiku only</ResponseField>
+<ResponseField name="Projects" type="number">20</ResponseField>
+<ResponseField name="Threads" type="number">10</ResponseField>
+<ResponseField name="Concurrent Runs" type="number">2</ResponseField>
+<ResponseField name="Custom Workers" type="number">0</ResponseField>
+<ResponseField name="Scheduled Triggers" type="number">0</ResponseField>
+<ResponseField name="App Triggers" type="number">0</ResponseField>
+<ResponseField name="Memory" type="object">
+  ```json
+  {
+    "enabled": true,
+    "max_memories": 10,
+    "retrieval_limit": 2
+  }
+  ```
+</ResponseField>
+<ResponseField name="Can Purchase Credits" type="boolean">false</ResponseField>
+
+**Key Features**:
+- Perfect for trying Kortix
+- Access to efficient Haiku model
+- Credits refresh weekly
+- Basic memory support
+
+```python
+# Daily credit configuration for Basic tier
+'daily_credit_config': {
+    'enabled': True,
+    'amount': Decimal('3.00'),
+    'refresh_interval_hours': 168  # 7 days
+}
+```
+
+---
+
+### Plus
+
+**Price**: **$40/month**
+
+<ResponseField name="Monthly Credits" type="number">$40.00</ResponseField>
+<ResponseField name="Daily Bonus" type="string">+$2.00 per day</ResponseField>
+<ResponseField name="Models" type="string">All models (Haiku, Sonnet, GPT-4, etc.)</ResponseField>
+<ResponseField name="Projects" type="number">Unlimited</ResponseField>
+<ResponseField name="Threads" type="number">Unlimited</ResponseField>
+<ResponseField name="Concurrent Runs" type="number">3</ResponseField>
+<ResponseField name="Custom Workers" type="number">5</ResponseField>
+<ResponseField name="Scheduled Triggers" type="number">5</ResponseField>
+<ResponseField name="App Triggers" type="number">25</ResponseField>
+<ResponseField name="Memory" type="object">
+  ```json
+  {
+    "enabled": true,
+    "max_memories": 100,
+    "retrieval_limit": 15
+  }
+  ```
+</ResponseField>
+<ResponseField name="Can Purchase Credits" type="boolean">false</ResponseField>
+
+**Key Features**:
+- Unlimited chats and projects
+- Access to all AI models
+- Enhanced memory capabilities
+- Create custom agents
+- Scheduled automation
+- Monthly credit refills enabled
+
+---
+
+### Pro
+
+**Price**: **$100/month**
+
+<ResponseField name="Monthly Credits" type="number">$100.00</ResponseField>
+<ResponseField name="Daily Bonus" type="string">+$2.00 per day</ResponseField>
+<ResponseField name="Models" type="string">All models</ResponseField>
+<ResponseField name="Projects" type="number">Unlimited</ResponseField>
+<ResponseField name="Threads" type="number">Unlimited</ResponseField>
+<ResponseField name="Concurrent Runs" type="number">5</ResponseField>
+<ResponseField name="Custom Workers" type="number">20</ResponseField>
+<ResponseField name="Scheduled Triggers" type="number">10</ResponseField>
+<ResponseField name="App Triggers" type="number">50</ResponseField>
+<ResponseField name="Memory" type="object">
+  ```json
+  {
+    "enabled": true,
+    "max_memories": 500,
+    "retrieval_limit": 25
+  }
+  ```
+</ResponseField>
+<ResponseField name="Can Purchase Credits" type="boolean">false</ResponseField>
+
+**Key Features**:
+- Higher concurrency (5 simultaneous runs)
+- More custom workers (20)
+- Expanded trigger limits
+- Advanced memory storage
+- Ideal for power users and small teams
+
+---
+
+### Ultra
+
+**Price**: **$400/month**
+
+<ResponseField name="Monthly Credits" type="number">$400.00</ResponseField>
+<ResponseField name="Daily Bonus" type="string">+$2.00 per day</ResponseField>
+<ResponseField name="Models" type="string">All models</ResponseField>
+<ResponseField name="Projects" type="number">Unlimited</ResponseField>
+<ResponseField name="Threads" type="number">Unlimited</ResponseField>
+<ResponseField name="Concurrent Runs" type="number">20</ResponseField>
+<ResponseField name="Custom Workers" type="number">100</ResponseField>
+<ResponseField name="Scheduled Triggers" type="number">50</ResponseField>
+<ResponseField name="App Triggers" type="number">200</ResponseField>
+<ResponseField name="Memory" type="object">
+  ```json
+  {
+    "enabled": true,
+    "max_memories": 2000,
+    "retrieval_limit": 40
+  }
+  ```
+</ResponseField>
+<ResponseField name="Can Purchase Credits" type="boolean">true</ResponseField>
+
+**Key Features**:
+- Maximum concurrency (20 runs)
+- Extensive custom workers (100)
+- Large-scale automation (200 app triggers)
+- Maximum memory capacity
+- **Can purchase additional credit packages**
+- Designed for teams and heavy usage
+
+---
+
+## Tier Comparison Table
+
+| Feature | None | Basic | Plus | Pro | Ultra |
+|---------|------|-------|------|-----|-------|
+| **Price** | $0 | $0 | $40/mo | $100/mo | $400/mo |
+| **Monthly Credits** | $0 | $3/week | $40 | $100 | $400 |
+| **Models** | Haiku | Haiku | All | All | All |
+| **Projects** | 0 | 20 | ∞ | ∞ | ∞ |
+| **Threads** | 0 | 10 | ∞ | ∞ | ∞ |
+| **Concurrent Runs** | 0 | 2 | 3 | 5 | 20 |
+| **Custom Workers** | 0 | 0 | 5 | 20 | 100 |
+| **Scheduled Triggers** | 0 | 0 | 5 | 10 | 50 |
+| **App Triggers** | 0 | 0 | 25 | 50 | 200 |
+| **Max Memories** | 0 | 10 | 100 | 500 | 2000 |
+| **Buy Credits** | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+<Note>
+"Unlimited" (∞) is implemented as 100,000 for threads and 200,000 for projects to maintain system integrity.
+</Note>
+
+## Credit Packages (Ultra Tier Only)
+
+Ultra tier subscribers can purchase additional credits beyond their monthly allocation:
+
+```python
+CREDIT_PACKAGES = [
+    {'amount': Decimal('10.00'), 'stripe_price_id': '...'},   # $10
+    {'amount': Decimal('25.00'), 'stripe_price_id': '...'},   # $25
+    {'amount': Decimal('50.00'), 'stripe_price_id': '...'},   # $50
+    {'amount': Decimal('100.00'), 'stripe_price_id': '...'},  # $100
+    {'amount': Decimal('250.00'), 'stripe_price_id': '...'},  # $250
+    {'amount': Decimal('500.00'), 'stripe_price_id': '...'},  # $500
+]
+```
+
+### Purchase Credits
+
+```python
+POST /api/v1/billing/payments/checkout
+{
+  "amount": 50.00,  // Credits amount (e.g., 50 = $50 = 5000 credits)
+  "success_url": "https://app.kortix.ai/billing/success",
+  "cancel_url": "https://app.kortix.ai/billing/cancel"
+}
+```
+
+<Warning>
+Only Ultra tier subscribers can purchase additional credit packages. All other tiers are limited to their monthly allocation.
+</Warning>
+
+## Legacy Tiers
+
+Existing users may be on legacy pricing plans:
+
+### Legacy Pro ($12/month)
+- $100 monthly credits
+- 1,000 thread limit
+- 10 concurrent runs
+- Can purchase credits
+
+### Legacy Business ($50/month)
+- $400 monthly credits
+- 5,000 thread limit
+- 30 concurrent runs
+- Can purchase credits
+
+### Legacy Enterprise ($125/month, $200/month)
+- Up to $1,200 monthly credits
+- Up to 25,000 thread limit
+- Up to 100 concurrent runs
+- Can purchase credits
+
+<Info>
+Legacy tier users retain their pricing and limits. New signups use the current tier structure (Basic, Plus, Pro, Ultra).
+</Info>
+
+## Billing Cycle & Refills
+
+### Monthly Refills (Paid Tiers)
+
+Paid tiers (Plus, Pro, Ultra) receive:
+- **Monthly credit allocation** on billing date
+- **Daily bonus credits** ($2/day) that refresh every 24 hours
+- Credits roll over until used (no expiration)
+
+### Weekly Refills (Basic Tier)
+
+Basic tier receives:
+- **$3 credit refill every 168 hours** (7 days)
+- No rollover—unused credits expire
+- No monthly refills
+
+```python
+# Basic tier configuration
+'daily_credit_config': {
+    'enabled': True,
+    'amount': Decimal('3.00'),
+    'refresh_interval_hours': 168  # 7-day cycle
+},
+'monthly_refill_enabled': False  # No monthly refills
+```
+
+## Subscription Management
+
+### Create Subscription
+
+```python
+POST /api/v1/billing/subscriptions/checkout
+{
+  "tier_key": "tier_2_20",  // Plus tier
+  "success_url": "https://app.kortix.ai/billing/success",
+  "cancel_url": "https://app.kortix.ai/billing/cancel",
+  "commitment_type": null,  // Optional: "yearly" for discounts
+  "locale": "en"  // Optional: for Stripe adaptive pricing
+}
+```
+
+**Tier Keys**:
+- `"free"` - Basic (Free)
+- `"tier_2_20"` - Plus ($40/month)
+- `"tier_6_50"` - Pro ($100/month)
+- `"tier_25_200"` - Ultra ($400/month)
+
+### Yearly Commitments
+
+Save money with yearly commitments:
+
+```python
+# Yearly pricing with commitment
+"tier_2_20": "$17/month" (billed yearly, ~15% discount)
+"tier_6_50": "$42/month" (billed yearly, ~16% discount)
+"tier_25_200": "$170/month" (billed yearly, ~15% discount)
+```
+
+### Cancel Subscription
+
+```python
+POST /api/v1/billing/subscriptions/cancel
+{
+  "feedback": "Optional cancellation reason"
+}
+```
+
+### Customer Portal
+
+Access Stripe customer portal to manage payment methods, view invoices, and update billing:
+
+```python
+POST /api/v1/billing/subscriptions/portal
+{
+  "return_url": "https://app.kortix.ai/settings/billing"
+}
+```
+
+## Model Access by Tier
+
+Model access is tier-restricted:
+
+```python
+def is_model_allowed(tier_name: str, model: str) -> bool:
+    tier = TIERS.get(tier_name)
+    
+    # Paid tiers (Plus, Pro, Ultra): 'all' models
+    if 'all' in tier.models:
+        return True
+    
+    # Free tiers: only 'haiku' models
+    # Checks model tier_availability field
+```
+
+| Tier | Allowed Models |
+|------|----------------|
+| **None** | Haiku only |
+| **Basic** | Haiku only |
+| **Plus** | All models (Haiku, Sonnet, GPT-4, o1, etc.) |
+| **Pro** | All models |
+| **Ultra** | All models |
+
+## Usage Tracking
+
+Track your credit usage:
+
+```python
+POST /api/v1/billing/usage/tokens
+{
+  "prompt_tokens": 1500,
+  "completion_tokens": 800,
+  "model": "claude-3-5-sonnet-20241022",
+  "thread_id": "optional-thread-id",
+  "message_id": "optional-message-id"
+}
+```
+
+Credits are calculated as:
+```python
+cost = (
+    (prompt_tokens * model_input_cost_per_token) +
+    (completion_tokens * model_output_cost_per_token)
+) * TOKEN_PRICE_MULTIPLIER
+```
+
+## Checking Limits
+
+Before creating resources, check tier limits:
+
+```python
+# From backend
+def get_tier_limits(tier_name: str) -> Dict:
+    tier = TIERS.get(tier_name)
+    return {
+        'project_limit': tier.project_limit,
+        'thread_limit': tier.thread_limit,
+        'concurrent_runs': tier.concurrent_runs,
+        'custom_workers_limit': tier.custom_workers_limit,
+        'scheduled_triggers_limit': tier.scheduled_triggers_limit,
+        'app_triggers_limit': tier.app_triggers_limit,
+        'memory_config': tier.memory_config
+    }
+```
+
+## Admin Operations
+
+Administrators can adjust credits manually:
+
+```python
+ADMIN_LIMITS = {
+    'max_credit_adjustment': Decimal('1000.00'),  # Max admin adjustment
+    'max_bulk_grant': Decimal('10000.00'),        # Max bulk grant
+    'require_super_admin_above': Decimal('500.00') # Requires super admin
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Monitor Credit Usage">
+    Keep track of your credit consumption to avoid unexpected overages (Ultra tier) or running out (other tiers)
+  </Accordion>
+
+  <Accordion title="Choose the Right Model">
+    Use Haiku for simple tasks and Sonnet for complex reasoning to optimize credit usage
+  </Accordion>
+
+  <Accordion title="Optimize Prompts">
+    Shorter, clearer prompts consume fewer tokens and save credits
+  </Accordion>
+
+  <Accordion title="Use Concurrent Runs Wisely">
+    Don't exceed your tier's concurrent run limit—queue tasks instead
+  </Accordion>
+
+  <Accordion title="Upgrade When Needed">
+    If you frequently hit limits, consider upgrading to the next tier
+  </Accordion>
+</AccordionGroup>
+
+## Related Features
+
+- [Referrals](/features/referrals) - Earn bonus credits by referring friends
+- [Projects](/concepts/projects) - Understand project limits by tier
+- [Memory](/features/memory) - Memory limits vary by tier

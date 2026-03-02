@@ -1,0 +1,464 @@
+---
+title: 'Referral Program'
+description: 'Earn bonus credits by inviting friends to Kortix'
+---
+
+## Overview
+
+The Kortix Referral Program rewards you with bonus credits when you invite friends to join the platform. For each successful referral, both you and your friend receive credits.
+
+## How It Works
+
+1. **Get Your Referral Code**: Every Kortix user has a unique referral code
+2. **Share Your Code**: Invite friends via email or share your referral link
+3. **Friend Signs Up**: Your friend creates an account using your referral code
+4. **Earn Credits**: Both you and your friend receive bonus credits
+
+<Note>
+Referral credits are awarded when your friend successfully completes signup using your referral code.
+</Note>
+
+## Referral Rewards
+
+### Credit Amount
+
+**$1.00 credit per successful referral** (100 platform credits)
+
+```python
+# From backend configuration
+REFERRAL_CREDITS = Decimal('1.00')  # $1 = 100 credits
+```
+
+### Earning Limit
+
+**Maximum $100.00 total** from referrals (10,000 platform credits)
+
+```python
+MAX_EARNABLE_CREDITS_FROM_REFERRAL = Decimal('100.00')
+```
+
+<Info>
+You can earn up to $100 in total referral credits. After reaching this limit, you'll still get the satisfaction of helping friends discover Kortix, but won't earn additional credits.
+</Info>
+
+## Getting Your Referral Code
+
+### Automatic Code Generation
+
+Each user automatically receives a unique referral code upon account creation.
+
+```python
+GET /api/v1/referrals/code
+
+Response:
+{
+  "referral_code": "ABC123XYZ"
+}
+```
+
+Your referral code:
+- Is automatically created for you
+- Is unique and permanent
+- Can be refreshed if needed
+
+### Refresh Your Code
+
+If you want a new code (the old one expires):
+
+```python
+POST /api/v1/referrals/refresh
+
+Response:
+{
+  "success": true,
+  "old_code": "ABC123XYZ",
+  "new_code": "XYZ789ABC",
+  "message": "Referral code refreshed successfully"
+}
+```
+
+<Warning>
+Refreshing your code will invalidate the old code. Any pending referrals using the old code will not be credited.
+</Warning>
+
+## Sharing Referrals
+
+### Share Via Email
+
+Send referral invitations directly from Kortix:
+
+```python
+POST /api/v1/referrals/send
+{
+  "email": "friend@example.com"
+}
+
+Response:
+{
+  "success": true,
+  "message": "Referral email sent successfully"
+}
+```
+
+### Bulk Email Invitations
+
+Invite multiple friends at once:
+
+```python
+POST /api/v1/referrals/send-bulk
+{
+  "emails": [
+    "friend1@example.com",
+    "friend2@example.com",
+    "friend3@example.com"
+  ]
+}
+
+Response:
+{
+  "success": true,
+  "message": "Successfully sent 3 out of 3 emails",
+  "results": [
+    {
+      "email": "friend1@example.com",
+      "success": true,
+      "message": "Email sent successfully"
+    },
+    {
+      "email": "friend2@example.com",
+      "success": true,
+      "message": "Email sent successfully"
+    },
+    {
+      "email": "friend3@example.com",
+      "success": true,
+      "message": "Email sent successfully"
+    }
+  ],
+  "success_count": 3,
+  "total_count": 3
+}
+```
+
+### Share Your Link
+
+You can also share a direct referral link:
+
+```
+https://app.kortix.ai/auth?ref=YOUR_CODE
+```
+
+When friends sign up using this link, your code is automatically applied.
+
+## Referral Email Content
+
+Referral emails include:
+- A personalized invitation from you
+- Your unique referral link
+- Information about Kortix
+- Clear call-to-action to sign up
+
+```python
+# From backend notification service
+await notification_service.send_referral_code_notification(
+    recipient_email=email,
+    referral_url=f"{FRONTEND_URL}/auth?ref={referral_code}",
+    inviter_id=user_id
+)
+```
+
+## Tracking Your Referrals
+
+### View Referral Stats
+
+Get an overview of your referral performance:
+
+```python
+GET /api/v1/referrals/stats
+
+Response:
+{
+  "referral_code": "ABC123XYZ",
+  "total_referrals": 15,
+  "successful_referrals": 12,
+  "total_credits_earned": 1200,  // 12 * 100 credits
+  "remaining_earnable_credits": 8800,  // (100 - 12) * 100
+  "max_earnable_credits": 10000,
+  "has_reached_limit": false,
+  "last_referral_at": "2024-01-15T10:30:00Z"
+}
+```
+
+<ResponseField name="referral_code" type="string">
+  Your unique referral code
+</ResponseField>
+
+<ResponseField name="total_referrals" type="number">
+  Total number of people who used your code (including pending)
+</ResponseField>
+
+<ResponseField name="successful_referrals" type="number">
+  Number of completed referrals that earned you credits
+</ResponseField>
+
+<ResponseField name="total_credits_earned" type="number">
+  Total credits earned from referrals (in platform credits, not dollars)
+</ResponseField>
+
+<ResponseField name="remaining_earnable_credits" type="number">
+  How many more credits you can earn before hitting the limit
+</ResponseField>
+
+<ResponseField name="max_earnable_credits" type="number">
+  Maximum credits earnable (10,000 = $100)
+</ResponseField>
+
+<ResponseField name="has_reached_limit" type="boolean">
+  Whether you've reached the maximum earning limit
+</ResponseField>
+
+### View Referral History
+
+See details of all your referrals:
+
+```python
+GET /api/v1/referrals/history?limit=50&offset=0
+
+Response:
+[
+  {
+    "referred_account_id": "user-uuid-1",
+    "referred_at": "2024-01-15T10:30:00Z",
+    "status": "successful",
+    "credits_awarded": 100
+  },
+  {
+    "referred_account_id": "user-uuid-2",
+    "referred_at": "2024-01-14T08:20:00Z",
+    "status": "successful",
+    "credits_awarded": 100
+  },
+  {
+    "referred_account_id": "user-uuid-3",
+    "referred_at": "2024-01-13T15:45:00Z",
+    "status": "pending",
+    "credits_awarded": 0
+  }
+]
+```
+
+## Using a Referral Code
+
+### During Signup
+
+New users can apply a referral code during registration:
+
+1. Visit signup page with referral link: `https://app.kortix.ai/auth?ref=ABC123XYZ`
+2. Code is automatically applied
+3. Complete signup process
+4. Credits are awarded to both referrer and referee
+
+### Validate a Code
+
+Check if a referral code is valid:
+
+```python
+POST /api/v1/referrals/validate
+{
+  "code": "ABC123XYZ"
+}
+
+Response:
+{
+  "valid": true,
+  "referrer_id": "user-uuid"
+}
+```
+
+<Warning>
+Referral codes are case-insensitive. "ABC123" and "abc123" are treated as the same code.
+</Warning>
+
+## Credit Distribution
+
+When a referral is successful:
+
+### Referrer Receives
+- **$1.00 credit** (100 platform credits)
+- Credits added to account balance immediately
+- Can be used for any Kortix services
+
+### Referee Receives
+- **$1.00 credit** (100 platform credits)
+- Applied to their new account
+- Welcome bonus for joining
+
+```python
+# From referral service
+await process_referral(
+    referrer_id=referrer_id,
+    referred_account_id=new_user_id,
+    referral_code=code,
+    credits_amount=REFERRAL_CREDITS  # $1.00
+)
+```
+
+## Earning Limits
+
+### Individual Limit Check
+
+Before processing a referral, the system checks if you've hit the limit:
+
+```python
+# From referral service
+total_earned = await check_total_earned_credits(referrer_id)
+
+if total_earned >= MAX_EARNABLE_CREDITS_FROM_REFERRAL:
+    # Referral not processed - limit reached
+    return {
+        'success': False,
+        'message': f'Maximum earnable credits limit reached: ${MAX_EARNABLE_CREDITS_FROM_REFERRAL}',
+        'credits_awarded': 0
+    }
+```
+
+### Partial Credits
+
+If you're close to the limit, you'll receive partial credits:
+
+```python
+# Example: You've earned $98, limit is $100
+total_earned = Decimal('98.00')
+remaining_credits = MAX_EARNABLE_CREDITS - total_earned  # $2.00
+actual_credits_to_award = min(REFERRAL_CREDITS, remaining_credits)  # $1.00 (normal)
+
+# But if you've earned $99.50:
+total_earned = Decimal('99.50')
+remaining_credits = Decimal('0.50')
+actual_credits_to_award = min(Decimal('1.00'), Decimal('0.50'))  # $0.50 (partial)
+```
+
+## Referral Database Schema
+
+```sql
+-- Referral codes table
+CREATE TABLE referral_codes (
+    id UUID PRIMARY KEY,
+    account_id UUID NOT NULL,
+    code TEXT UNIQUE NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP,
+    expires_at TIMESTAMP
+);
+
+-- Referral stats (aggregated)
+CREATE TABLE referral_stats (
+    account_id UUID PRIMARY KEY,
+    referral_code TEXT,
+    total_referrals INTEGER DEFAULT 0,
+    successful_referrals INTEGER DEFAULT 0,
+    total_credits_earned DECIMAL DEFAULT 0,
+    last_referral_at TIMESTAMP
+);
+
+-- Individual referral records
+CREATE TABLE referrals (
+    id UUID PRIMARY KEY,
+    referrer_id UUID NOT NULL,
+    referred_account_id UUID NOT NULL,
+    referral_code TEXT NOT NULL,
+    credits_awarded DECIMAL NOT NULL,
+    created_at TIMESTAMP
+);
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Personalize Your Invitations">
+    When sending referral emails, add a personal note explaining why you love Kortix
+  </Accordion>
+
+  <Accordion title="Share in Communities">
+    Share your referral link in relevant online communities (with permission)
+  </Accordion>
+
+  <Accordion title="Track Your Progress">
+    Regularly check your referral stats to see how close you are to the $100 limit
+  </Accordion>
+
+  <Accordion title="Help Your Referrals">
+    Guide your friends through their first Kortix experience to ensure they get value
+  </Accordion>
+
+  <Accordion title="Don't Spam">
+    Only share with people genuinely interested in AI agents and automation
+  </Accordion>
+</AccordionGroup>
+
+## Referral Program Rules
+
+<Warning>
+- Self-referrals are not allowed
+- Each user can only be referred once
+- Referral credits cannot be transferred or sold
+- Kortix reserves the right to revoke credits from fraudulent referrals
+- Maximum earning limit is $100 total
+</Warning>
+
+## API Reference
+
+### Get Referral Code
+```http
+GET /api/v1/referrals/code
+```
+
+### Refresh Referral Code
+```http
+POST /api/v1/referrals/refresh
+```
+
+### Send Referral Email
+```http
+POST /api/v1/referrals/send
+Content-Type: application/json
+
+{
+  "email": "friend@example.com"
+}
+```
+
+### Send Bulk Referral Emails
+```http
+POST /api/v1/referrals/send-bulk
+Content-Type: application/json
+
+{
+  "emails": ["friend1@example.com", "friend2@example.com"]
+}
+```
+
+### Get Referral Stats
+```http
+GET /api/v1/referrals/stats
+```
+
+### Get Referral History
+```http
+GET /api/v1/referrals/history?limit=50&offset=0
+```
+
+### Validate Referral Code
+```http
+POST /api/v1/referrals/validate
+Content-Type: application/json
+
+{
+  "code": "ABC123XYZ"
+}
+```
+
+## Related Features
+
+- [Billing](/features/billing) - Understand how referral credits work with your subscription
+- [Credit System](/features/billing#credit-system) - Learn about the credit system and usage

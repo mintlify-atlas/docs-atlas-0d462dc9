@@ -1,0 +1,223 @@
+---
+title: 'Projects'
+description: 'Understand how projects organize your threads and sandbox environments in Kortix'
+---
+
+## Overview
+
+Projects are organizational containers in Kortix that help you manage and isolate your work. Each project serves as a dedicated workspace that bundles together threads (conversations) and their associated sandbox environments.
+
+## What is a Project?
+
+A project in Kortix is a logical grouping that provides:
+
+- **Thread Organization**: All threads (chats) belong to a project
+- **Isolated Sandbox Environment**: Each project has its own sandbox where code execution and file operations occur
+- **Resource Management**: Projects help you organize your work by use case, client, or any other categorization that suits your workflow
+
+<Note>
+When you create a new thread/chat in Kortix, it's automatically associated with a project. If you don't specify one, a new project is created automatically.
+</Note>
+
+## Project Structure
+
+Each project contains:
+
+### Threads
+Threads are conversation sessions with AI agents. Multiple threads can exist within a single project, allowing you to have separate conversations while sharing the same project context and sandbox environment.
+
+```python
+# From the backend: threads belong to projects
+CREATE TABLE threads (
+    thread_id UUID PRIMARY KEY,
+    project_id UUID REFERENCES projects(project_id),
+    account_id UUID NOT NULL,
+    name TEXT,
+    metadata JSONB,
+    is_public BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+)
+```
+
+### Sandbox Environment
+Each project is linked to a sandbox resource that provides an isolated execution environment. This sandbox persists across all threads within the project.
+
+```python
+# Projects reference a sandbox resource
+CREATE TABLE projects (
+    project_id UUID PRIMARY KEY,
+    account_id UUID NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    sandbox_resource_id UUID,  -- Links to sandbox
+    is_public BOOLEAN DEFAULT FALSE,
+    icon_name TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+)
+```
+
+## Creating Projects and Threads
+
+Projects are typically created implicitly when you create a thread, but they can also be managed separately.
+
+### Automatic Project Creation
+
+When you start a new chat, Kortix automatically creates a project if one isn't specified:
+
+```python
+# From backend/core/threads/repo.py
+async def create_project_and_thread(
+    project_id: str,
+    thread_id: str,
+    account_id: str,
+    project_name: str,
+    thread_name: str = "New Chat",
+    status: str = "pending",
+    memory_enabled: Optional[bool] = None
+) -> Dict[str, Any]:
+    # Creates both project and thread atomically
+    # Ensures thread always has a valid project
+```
+
+### Project Properties
+
+<ResponseField name="project_id" type="string" required>
+  Unique identifier for the project
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Display name for the project
+</ResponseField>
+
+<ResponseField name="sandbox_resource_id" type="string">
+  Reference to the sandbox environment (created on-demand)
+</ResponseField>
+
+<ResponseField name="is_public" type="boolean" default="false">
+  Whether the project is publicly accessible
+</ResponseField>
+
+<ResponseField name="icon_name" type="string">
+  Visual icon identifier for the project
+</ResponseField>
+
+## Project Limits by Subscription Tier
+
+Your subscription tier determines how many projects you can create:
+
+| Tier | Project Limit | Description |
+|------|--------------|-------------|
+| **None** | 0 | No projects allowed |
+| **Basic (Free)** | 20 | Limited projects for free tier |
+| **Plus** | Unlimited | No project limits |
+| **Pro** | Unlimited | No project limits |
+| **Ultra** | Unlimited | No project limits |
+
+<Note>
+On paid tiers, project limits are effectively set to 200,000 to provide "unlimited" functionality while maintaining system integrity.
+</Note>
+
+## Thread-to-Project Relationship
+
+Every thread must belong to exactly one project. This relationship ensures:
+
+1. **Data Isolation**: Files and execution state are scoped to the project's sandbox
+2. **Organization**: Related conversations can be grouped together
+3. **Resource Sharing**: Multiple threads can share the same sandbox environment
+
+### Querying Threads by Project
+
+```python
+# Example from backend showing thread-project relationship
+async def list_user_threads(account_id: str) -> List[Dict]:
+    # Returns threads with their project information
+    """
+    SELECT 
+        t.thread_id,
+        t.project_id,
+        t.name,
+        -- Project fields
+        p.name AS project_name,
+        p.icon_name AS project_icon_name,
+        -- Sandbox fields
+        r.external_id AS sandbox_id,
+        r.config AS sandbox_config
+    FROM threads t
+    LEFT JOIN projects p ON t.project_id = p.project_id
+    LEFT JOIN resources r ON p.sandbox_resource_id = r.id
+    """
+```
+
+## Sandbox Integration
+
+Projects are tightly integrated with sandbox environments:
+
+- **Lazy Initialization**: Sandboxes are created when first needed
+- **Persistence**: The sandbox persists for all threads in the project
+- **Isolation**: Each project has its own isolated filesystem and execution environment
+
+```python
+# Updating project sandbox reference
+async def update_project_sandbox_resource(
+    project_id: str, 
+    sandbox_resource_id: str
+) -> bool:
+    # Links a sandbox to this project
+    # All threads in the project will use this sandbox
+```
+
+## Managing Projects
+
+### Updating Project Properties
+
+```python
+# Update project name
+await update_project_name(project_id, "My Research Project")
+
+# Update visibility
+await update_project_visibility(project_id, is_public=True)
+```
+
+### Deleting Projects
+
+Deleting a project will also affect its associated threads. Ensure you understand the implications before deletion:
+
+```python
+# Count threads in a project before deletion
+thread_count = await count_project_threads(project_id)
+
+# Delete the project
+await delete_project(project_id)
+```
+
+<Warning>
+Deleting a project may cascade to delete associated threads and sandbox resources. Always verify what will be deleted before proceeding.
+</Warning>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Organize by Use Case">
+    Create separate projects for different types of work (e.g., "Data Analysis", "Content Writing", "Code Review")
+  </Accordion>
+
+  <Accordion title="Use Descriptive Names">
+    Give your projects clear, meaningful names to easily identify them later
+  </Accordion>
+
+  <Accordion title="Monitor Thread Count">
+    Keep track of how many threads exist in each project to avoid clutter
+  </Accordion>
+
+  <Accordion title="Leverage Shared Sandbox">
+    Use multiple threads within a project to maintain context across related conversations
+  </Accordion>
+</AccordionGroup>
+
+## Related Concepts
+
+- [Threads](/concepts/threads) - Learn about conversation threads within projects
+- [Sandboxes](/concepts/sandboxes) - Understand the isolated execution environments
+- [Billing](/features/billing) - See how projects count toward your subscription limits
