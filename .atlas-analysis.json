@@ -1,0 +1,158 @@
+{
+  "projectType": "saas",
+  "projectName": "Kortix",
+  "projectDescription": "The complete platform for creating autonomous AI agents that work for you",
+  "theme": "palm",
+  "primaryColor": "#7C3AED",
+  "lightColor": "#A78BFA",
+  "darkColor": "#5B21B6",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/agents",
+              "concepts/threads",
+              "concepts/tools",
+              "concepts/sandboxes",
+              "concepts/mcp"
+            ]
+          },
+          {
+            "group": "Building Agents",
+            "pages": [
+              "agents/creating-agents",
+              "agents/agent-builder",
+              "agents/system-prompts",
+              "agents/workflows"
+            ]
+          },
+          {
+            "group": "Agent Capabilities",
+            "pages": [
+              "capabilities/browser-automation",
+              "capabilities/file-management",
+              "capabilities/web-intelligence",
+              "capabilities/code-execution",
+              "capabilities/vision"
+            ]
+          },
+          {
+            "group": "Tools & Extensions",
+            "pages": [
+              "tools/overview",
+              "tools/built-in-tools",
+              "tools/mcp-integration",
+              "tools/custom-tools",
+              "tools/composio"
+            ]
+          },
+          {
+            "group": "Platform Features",
+            "pages": [
+              "features/knowledge-base",
+              "features/memory",
+              "features/triggers",
+              "features/analytics",
+              "features/notifications"
+            ]
+          },
+          {
+            "group": "Self-Hosting",
+            "pages": [
+              "self-hosting/overview",
+              "self-hosting/setup",
+              "self-hosting/configuration",
+              "self-hosting/deployment",
+              "self-hosting/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "api/introduction",
+              "api/authentication",
+              "api/errors"
+            ]
+          },
+          {
+            "group": "Agents",
+            "pages": [
+              "api/agents/create",
+              "api/agents/get",
+              "api/agents/update",
+              "api/agents/delete",
+              "api/agents/run"
+            ]
+          },
+          {
+            "group": "Threads",
+            "pages": [
+              "api/threads/create",
+              "api/threads/get",
+              "api/threads/list",
+              "api/threads/delete"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": [
+              "api/tools/list",
+              "api/tools/register",
+              "api/tools/mcp"
+            ]
+          },
+          {
+            "group": "SDK",
+            "pages": [
+              "sdk/overview",
+              "sdk/python",
+              "sdk/examples"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Create and manage autonomous AI agents",
+    "Browser automation with web scraping and form filling",
+    "Intelligent file and document management",
+    "Code execution in secure sandboxed environments",
+    "Multi-modal capabilities including vision and voice",
+    "MCP tool integration for extensibility",
+    "Real-time conversation threading",
+    "Knowledge base integration for agent context",
+    "Custom workflow and trigger automation",
+    "Self-hostable platform with full source access"
+  ],
+  "publicApiSurface": [
+    "POST /api/agents - Create agent",
+    "GET /api/agents/{agent_id} - Get agent",
+    "POST /api/agents/{agent_id}/run - Run agent",
+    "POST /api/threads - Create thread",
+    "GET /api/threads/{thread_id} - Get thread",
+    "GET /api/tools - List available tools",
+    "POST /api/tools/mcp - Register MCP tool",
+    "Agent.create() - SDK agent creation",
+    "Agent.run() - SDK agent execution",
+    "Thread.create() - SDK thread management",
+    "MCPTools() - SDK MCP integration"
+  ]
+}
