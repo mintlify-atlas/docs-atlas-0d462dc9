@@ -1,0 +1,605 @@
+---
+title: Notifications
+description: Keep users informed with email, push, and in-app notifications powered by Novu
+---
+
+Kortix's notification system keeps users informed about important events like task completions, payment updates, and system alerts. The system is powered by Novu and supports multiple delivery channels.
+
+## Notification Channels
+
+Kortix supports three notification channels:
+
+### Email Notifications
+
+Email is the primary notification channel:
+- Task completion updates
+- Payment confirmations and failures
+- Referral invitations
+- Welcome emails
+- Credits low alerts
+
+### Push Notifications
+
+Mobile push notifications via Expo:
+- Real-time task updates
+- Urgent alerts
+- System notifications
+
+### In-App Notifications
+
+Browser-based notifications:
+- Activity feed updates
+- Non-urgent reminders
+- Feature announcements
+
+## Notification Types
+
+The system supports various notification workflows:
+
+### Task Completion
+
+Notify users when their agent tasks complete:
+
+<CodeGroup>
+```python notification_service.py (lines 55-103)
+async def send_task_completion_notification(
+    self,
+    account_id: str,
+    task_name: str,
+    thread_id: str,
+    agent_name: Optional[str] = None,
+    result_summary: Optional[str] = None
+) -> Dict[str, Any]:
+    # Check if user is actively viewing the thread
+    should_send = await presence_service.should_send_notification(
+        account_id=account_id,
+        thread_id=thread_id,
+        channel="email"
+    )
+    
+    if not should_send:
+        logger.info(f"Suppressing notification (user actively viewing thread)")
+        return {"success": False, "reason": "User is actively viewing thread"}
+    
+    # Get account info
+    account_info = await self._get_account_info(account_id)
+    
+    # Build task URL
+    task_url = f"https://www.kortix.com/projects/{project_id}/thread/{thread_id}"
+    
+    # Trigger Novu workflow
+    result = await self.novu.trigger_workflow(
+        workflow_id="task-completed",
+        subscriber_id=account_id,
+        payload={
+            "first_name": account_info.get("first_name"),
+            "task_name": task_name,
+            "task_url": task_url
+        },
+        subscriber_email=account_info.get("email"),
+        subscriber_name=account_info.get("name")
+    )
+    
+    return {"success": True, "result": result}
+```
+</CodeGroup>
+
+<Note>
+  Task notifications are suppressed if the user is actively viewing the conversation. This prevents unnecessary interruptions.
+</Note>
+
+### Task Failed
+
+Alert users when tasks encounter errors:
+
+<CodeGroup>
+```python notification_service.py (lines 105-150)
+async def send_task_failed_notification(
+    self,
+    account_id: str,
+    task_name: str,
+    task_url: str,
+    failure_reason: str,
+    first_name: Optional[str] = None,
+    thread_id: Optional[str] = None
+) -> Dict[str, Any]:
+    # Check presence if thread_id provided
+    if thread_id:
+        should_send = await presence_service.should_send_notification(
+            account_id=account_id,
+            thread_id=thread_id,
+            channel="email"
+        )
+        
+        if not should_send:
+            return {"success": False, "reason": "User actively viewing"}
+    
+    account_info = await self._get_account_info(account_id)
+    
+    result = await self.novu.trigger_workflow(
+        workflow_id="task-failed",
+        subscriber_id=account_id,
+        payload={
+            "first_name": first_name or account_info.get("first_name"),
+            "task_name": task_name,
+            "task_url": task_url,
+            "failure_reason": failure_reason
+        },
+        subscriber_email=account_info.get("email"),
+        subscriber_name=account_info.get("name")
+    )
+    
+    return {"success": True, "result": result}
+```
+</CodeGroup>
+
+### Payment Notifications
+
+Inform users about payment events:
+
+**Payment Succeeded:**
+```python
+await notification_service.send_payment_succeeded_notification(
+    account_id="user_123",
+    amount=29.99,
+    currency="USD",
+    plan_name="Pro Plan"
+)
+```
+
+**Payment Failed:**
+```python
+await notification_service.send_payment_failed_notification(
+    account_id="user_123",
+    amount=29.99,
+    currency="USD",
+    reason="Card declined"
+)
+```
+
+### Credits Low Alert
+
+Warn users when credits are running low:
+
+```python
+await notification_service.send_credits_low_notification(
+    account_id="user_123",
+    remaining_credits=5.0,
+    threshold_percentage=20
+)
+```
+
+### Welcome Email
+
+Greet new users with a welcome message:
+
+<CodeGroup>
+```python notification_service.py (lines 436-470)
+async def send_welcome_email(self, account_id: str) -> Dict[str, Any]:
+    account_info = await self._get_account_info(account_id)
+    
+    if not account_info or not account_info.get("email"):
+        return {"success": False, "error": "No email found"}
+    
+    result = await self.novu.trigger_workflow(
+        workflow_id="welcome-email",
+        subscriber_id=account_id,
+        subscriber_email=account_info.get("email"),
+        subscriber_name=account_info.get("name"),
+        avatar=account_info.get("avatar")
+    )
+    
+    if not result:
+        return {"success": False, "error": "Failed to trigger workflow"}
+    
+    return {"success": True, "result": result}
+```
+</CodeGroup>
+
+### Referral Invitation
+
+Send referral codes to invited users:
+
+<CodeGroup>
+```python notification_service.py (lines 19-53)
+async def send_referral_code_notification(
+    self,
+    recipient_email: str,
+    referral_url: str,
+    inviter_id: str,
+) -> Dict[str, Any]:
+    inviter_info = await self._get_account_info(inviter_id)
+    
+    if not inviter_info or not inviter_info.get("email"):
+        return {"success": False, "error": "Inviter not found"}
+    
+    inviter_name = inviter_info.get("name", "A friend")
+    recipient_name = self._extract_name_from_email(recipient_email)
+    
+    success = email_service.send_referral_email(
+        recipient_email=recipient_email,
+        recipient_name=recipient_name,
+        sender_name=inviter_name,
+        referral_url=referral_url
+    )
+    
+    if success:
+        return {"success": True}
+    else:
+        return {"success": False, "error": "Failed to send email"}
+```
+</CodeGroup>
+
+## User Presence Detection
+
+The system checks if users are actively viewing content before sending notifications:
+
+<CodeGroup>
+```python notification_service.py (lines 64-74)
+# Check if user is actively viewing the thread
+should_send = await presence_service.should_send_notification(
+    account_id=account_id,
+    thread_id=thread_id,
+    channel="email"
+)
+
+if not should_send:
+    logger.info(f"Suppressing notification (user actively viewing)")
+    return {"success": False, "reason": "User is actively viewing thread"}
+```
+</CodeGroup>
+
+This prevents sending redundant notifications when users are already engaged.
+
+## Managing Notification Settings
+
+### Get User Settings
+
+```bash
+GET /api/notifications/settings
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "settings": {
+    "account_id": "user_123",
+    "email_enabled": true,
+    "push_enabled": false,
+    "in_app_enabled": true
+  }
+}
+```
+
+### Update Settings
+
+```bash
+PUT /api/notifications/settings
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "email_enabled": false,
+  "push_enabled": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Notification settings updated successfully",
+  "settings": {
+    "account_id": "user_123",
+    "email_enabled": false,
+    "push_enabled": true,
+    "in_app_enabled": true
+  }
+}
+```
+
+## Push Notification Setup
+
+### Register Device Token
+
+Register a device for push notifications:
+
+```bash
+POST /api/notifications/device-token
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "device_token": "ExponentPushToken[xxxxx]",
+  "device_type": "mobile",
+  "provider": "expo"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Device token registered successfully"
+}
+```
+
+### Unregister Device Token
+
+```bash
+DELETE /api/notifications/device-token/{device_token}?provider=expo
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Device token unregistered successfully"
+}
+```
+
+## Novu Integration
+
+Kortix uses Novu for notification orchestration:
+
+### Workflow Trigger
+
+<CodeGroup>
+```python notification_service.py (lines 90-98)
+result = await self.novu.trigger_workflow(
+    workflow_id="task-completed",
+    subscriber_id=account_id,
+    payload={
+        "first_name": account_info.get("first_name"),
+        "task_name": task_name,
+        "task_url": task_url
+    },
+    subscriber_email=account_info.get("email"),
+    subscriber_name=account_info.get("name")
+)
+```
+</CodeGroup>
+
+### Supported Workflows
+
+- `welcome-email`: New user onboarding
+- `task-completed`: Task finished successfully
+- `task-failed`: Task encountered an error
+- `payment-succeeded`: Payment processed successfully
+- `payment-failed`: Payment processing failed
+- `credits-low`: Account credits below threshold
+- `promotional`: Marketing and announcements
+
+## Admin Notifications
+
+Admins can trigger custom notifications:
+
+<CodeGroup>
+```python notification_service.py (lines 272-291)
+async def trigger_workflow_admin(
+    self,
+    workflow_id: str,
+    payload_template: Dict[str, Any],
+    subscriber_id: Optional[str] = None,
+    subscriber_email: Optional[str] = None,
+    broadcast: bool = False
+) -> Dict[str, Any]:
+    if broadcast:
+        return await self._broadcast_workflow(workflow_id, payload_template)
+    elif subscriber_email:
+        return await self._trigger_workflow_by_email(workflow_id, payload_template, subscriber_email)
+    elif subscriber_id:
+        return await self._trigger_workflow_for_user(workflow_id, payload_template, subscriber_id)
+    else:
+        raise ValueError("Either subscriber_id, subscriber_email, or broadcast=True required")
+```
+</CodeGroup>
+
+### Broadcast Notifications
+
+Send notifications to all users:
+
+```python
+await notification_service.trigger_workflow_admin(
+    workflow_id="promotional",
+    payload_template={
+        "title": "New Feature Launch",
+        "message": "Check out our latest features!",
+        "action_url": "https://kortix.com/features"
+    },
+    broadcast=True
+)
+```
+
+### Template Variables
+
+Payloads support variable substitution:
+
+<CodeGroup>
+```python notification_service.py (lines 413-434)
+def _replace_template_variables(
+    self,
+    payload_template: Dict[str, Any],
+    account_info: Dict[str, Any]
+) -> Dict[str, Any]:
+    template_str = json.dumps(payload_template)
+    
+    replacements = {
+        "{{email}}": account_info.get("email", ""),
+        "{{name}}": account_info.get("name", ""),
+        "{{first_name}}": account_info.get("first_name", ""),
+        "{{phone}}": account_info.get("phone", ""),
+        "{{avatar}}": account_info.get("avatar", ""),
+    }
+    
+    for variable, value in replacements.items():
+        template_str = template_str.replace(variable, str(value) if value else "")
+    
+    return json.loads(template_str)
+```
+</CodeGroup>
+
+**Example:**
+```json
+{
+  "message": "Hello {{first_name}}, your task is complete!",
+  "email": "{{email}}"
+}
+```
+
+## Webhook Handler
+
+Receive webhook events from Novu:
+
+```bash
+POST /api/notifications/webhooks/novu
+Content-Type: application/json
+
+{
+  "type": "notification.sent",
+  "transactionId": "txn_123",
+  "subscriberId": "user_456"
+}
+```
+
+<CodeGroup>
+```python api.py (lines 161-181)
+@router.post("/webhooks/novu")
+async def handle_novu_webhook(request: Request):
+    payload = await request.json()
+    
+    event_type = payload.get('type')
+    
+    if event_type == 'notification.sent':
+        logger.info(f"Notification sent: {payload.get('transactionId')}")
+    elif event_type == 'notification.failed':
+        logger.warning(f"Notification failed: {payload.get('transactionId')}")
+    elif event_type == 'subscriber.created':
+        logger.info(f"Subscriber created: {payload.get('subscriberId')}")
+    
+    return {"status": "ok"}
+```
+</CodeGroup>
+
+## Account Info Retrieval
+
+The service fetches user details from Supabase Auth:
+
+<CodeGroup>
+```python notification_service.py (lines 473-516)
+async def _get_account_info(self, account_id: str) -> Dict[str, Any]:
+    client = await self.db.client
+    
+    # Get user from Supabase Auth
+    user = await client.auth.admin.get_user_by_id(account_id)
+    
+    if user and user.user:
+        email = user.user.email
+        user_metadata = user.user.user_metadata or {}
+        
+        name = (
+            user_metadata.get('full_name') or
+            user_metadata.get('name') or
+            user_metadata.get('display_name') or
+            (email.split('@')[0] if email else None)
+        )
+        
+        phone = user_metadata.get('phone') or user_metadata.get('phone_number')
+        avatar = user_metadata.get('avatar_url') or user_metadata.get('picture')
+    
+    return {
+        "email": email,
+        "name": name,
+        "phone": phone,
+        "avatar": avatar,
+        "first_name": name.split()[0] if name else "User"
+    }
+```
+</CodeGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Respect user presence">
+    Always check if users are actively viewing content before sending notifications. This prevents notification fatigue.
+  </Accordion>
+
+  <Accordion title="Use appropriate channels">
+    - Email for important updates and receipts
+    - Push for time-sensitive alerts
+    - In-app for low-priority updates
+  </Accordion>
+
+  <Accordion title="Provide clear actions">
+    Include direct links to relevant content in notifications. Users should know exactly what to do next.
+  </Accordion>
+
+  <Accordion title="Test notification flows">
+    Before going live, test all notification workflows to ensure correct delivery and formatting.
+  </Accordion>
+
+  <Accordion title="Monitor delivery rates">
+    Use Novu webhooks to track notification delivery and failures. Address issues promptly.
+  </Accordion>
+</AccordionGroup>
+
+## Environment Configuration
+
+Notifications are currently only enabled in staging mode:
+
+<CodeGroup>
+```python api.py (lines 13-18)
+def check_notifications_enabled():
+    if config.ENV_MODE != EnvMode.STAGING:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Notifications only available in staging mode"
+        )
+```
+</CodeGroup>
+
+<Note>
+  This restriction will be removed in production deployments.
+</Note>
+
+## Troubleshooting
+
+### Notifications Not Sending
+
+- **Check Novu setup**: Ensure Novu API key is configured
+- **Verify workflow**: Confirm the workflow exists in Novu
+- **Check user email**: Ensure the account has a valid email
+- **Review logs**: Look for errors in notification service logs
+
+### Push Tokens Not Working
+
+- **Verify provider**: Ensure using "expo" for Expo push notifications
+- **Check token format**: Expo tokens follow the pattern `ExponentPushToken[xxxxx]`
+- **Test registration**: Manually register a test token and verify
+
+### Duplicate Notifications
+
+- **Check presence service**: Ensure presence detection is working
+- **Review workflow triggers**: Verify workflows aren't triggered multiple times
+- **Check Novu deduplication**: Configure deduplication in Novu if needed
+
+## API Reference
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/notifications/settings` | Get user notification settings |
+| PUT | `/notifications/settings` | Update notification settings |
+| POST | `/notifications/device-token` | Register push notification device |
+| DELETE | `/notifications/device-token/{token}` | Unregister device |
+| POST | `/notifications/webhooks/novu` | Receive Novu webhook events |
+
+<Card title="See also" icon="link">
+  - [Agent Workflows](/agents/workflows)
+  - [Webhook Integration](/features/triggers)
+  - [Notifications](/features/notifications)
+</Card>

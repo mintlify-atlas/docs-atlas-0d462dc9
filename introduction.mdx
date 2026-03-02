@@ -1,0 +1,138 @@
+---
+title: Welcome to Kortix
+description: The complete platform for creating autonomous AI agents that work for you
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="Kortix Hero Light"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="Kortix Hero Dark"
+/>
+
+## What is Kortix?
+
+Kortix is a comprehensive SaaS platform for building, managing, and training sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf - from research and data analysis to browser automation and system operations.
+
+### Kortix Super Worker - Your Flagship Generalist AI
+
+Meet Kortix Super Worker, our showcase agent that demonstrates the full power of the Kortix platform. Through natural conversation, Kortix Super Worker handles:
+
+- **Research & Analysis** - Conduct comprehensive web research, analyze documents, synthesize information
+- **Browser Automation** - Navigate websites, extract data, fill forms, automate web workflows  
+- **File Management** - Create, edit, and organize documents, spreadsheets, presentations, code
+- **Data Processing** - Clean datasets, perform analysis, create visualizations, monitor KPIs
+- **System Administration** - Execute command-line operations, manage deployments, automate DevOps
+
+### Build Your Own Specialized Agents
+
+Kortix provides the infrastructure and tools to build custom agents tailored to specific domains, workflows, or business needs:
+
+<CardGroup cols={2}>
+  <Card title="Customer Service Agents" icon="headset">
+    Handle support tickets, manage onboarding, track customer satisfaction
+  </Card>
+  <Card title="Content Creation Agents" icon="pen-nib">
+    Generate marketing copy, create documentation, maintain content calendars
+  </Card>
+  <Card title="Sales & Marketing Agents" icon="chart-line">
+    Qualify leads, schedule meetings, create personalized campaigns
+  </Card>
+  <Card title="Research & Development" icon="flask">
+    Conduct academic research, monitor trends, analyze competitive landscapes
+  </Card>
+</CardGroup>
+
+## Platform Architecture
+
+Kortix consists of four main components that work together:
+
+<CardGroup cols={2}>
+  <Card title="Backend API" icon="server">
+    Python/FastAPI service with REST endpoints, thread management, agent orchestration, and LLM integration (Anthropic, OpenAI, and others via LiteLLM)
+  </Card>
+  <Card title="Frontend Dashboard" icon="browser">
+    Next.js/React application with chat interfaces, agent configuration dashboards, workflow builders, and monitoring tools
+  </Card>
+  <Card title="Agent Runtime" icon="docker">
+    Isolated Docker execution environments featuring browser automation, code interpreter, file system access, and security sandboxing
+  </Card>
+  <Card title="Database & Storage" icon="database">
+    Supabase-powered data layer handling authentication, agent configurations, conversation history, and real-time monitoring
+  </Card>
+</CardGroup>
+
+## Key Capabilities
+
+<AccordionGroup>
+  <Accordion title="Browser Automation" icon="window">
+    Navigate complex websites, extract data from multiple pages, fill forms, and automate repetitive web-based workflows
+  </Accordion>
+  <Accordion title="File Management" icon="folder">
+    Create and edit documents, spreadsheets, presentations, and code. Organize file systems and convert between formats
+  </Accordion>
+  <Accordion title="Web Intelligence" icon="magnifying-glass">
+    Crawling capabilities, search integration, data extraction and synthesis from multiple sources
+  </Accordion>
+  <Accordion title="System Operations" icon="terminal">
+    Command-line execution, system administration tasks, DevOps automation, health monitoring
+  </Accordion>
+  <Accordion title="API Integrations" icon="plug">
+    Connect with external services like Composio, integrate custom MCP tools, automate cross-platform workflows
+  </Accordion>
+  <Accordion title="Agent Builder" icon="wand-magic-sparkles">
+    Visual tools to configure, customize, and deploy agents with custom system prompts, tools, and workflows
+  </Accordion>
+</AccordionGroup>
+
+## Getting Started
+
+<CardGroup cols={3}>
+  <Card
+    title="Quickstart Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get from account setup to your first agent interaction in minutes
+  </Card>
+  <Card
+    title="Self-Hosted Installation"
+    icon="server"
+    href="/installation"
+  >
+    Deploy Kortix on your own infrastructure with full control
+  </Card>
+  <Card
+    title="SDK Reference"
+    icon="code"
+    href="/sdk/overview"
+  >
+    Build programmatically with the Kortix Python SDK
+  </Card>
+</CardGroup>
+
+## Use Cases
+
+<Tip>
+Kortix agents can be configured for industry-specific needs:
+
+- **Healthcare** - Patient data analysis, appointment scheduling
+- **Finance** - Risk assessment, compliance monitoring  
+- **Legal** - Document review, case research
+- **Education** - Curriculum development, student assessment
+</Tip>
+
+## Community & Support
+
+<CardGroup cols={2}>
+  <Card title="Join Discord" icon="discord" href="https://discord.com/invite/RvFhXUdZ9H">
+    Connect with the Kortix community
+  </Card>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/kortix-ai/suna">
+    Contribute to the open-source project
+  </Card>
+</CardGroup>

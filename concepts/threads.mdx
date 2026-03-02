@@ -1,0 +1,353 @@
+---
+title: Threads
+description: Understanding conversation threads and message management
+---
+
+## Overview
+
+Threads are conversation containers that maintain the context and history of interactions with agents. Each thread belongs to a project and contains an ordered sequence of messages exchanged between users and agents.
+
+## Thread Architecture
+
+### Data Model
+
+Threads are lightweight containers with the following structure:
+
+```sql
+CREATE TABLE threads (
+    thread_id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(project_id),
+    account_id TEXT NOT NULL,
+    name TEXT,
+    metadata JSONB,
+    is_public BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+)
+```
+
+Reference: `backend/core/threads/repo.py:21-46`
+
+### Thread-Project-Sandbox Relationship
+
+Threads are organized in a hierarchy:
+
+```
+Project (workspace)
+  ├── Sandbox (isolated runtime)
+  └── Threads (conversations)
+       ├── Thread 1
+       ├── Thread 2
+       └── Thread 3
+```
+
+When listing threads, the system performs an efficient LEFT JOIN to include project and sandbox information:
+
+```python
+# backend/core/threads/repo.py:21-46
+SELECT 
+    t.thread_id,
+    t.project_id,
+    t.name,
+    t.metadata,
+    -- Project fields
+    p.name AS project_name,
+    p.icon_name AS project_icon_name,
+    -- Sandbox fields
+    r.external_id AS sandbox_id,
+    r.config AS sandbox_config
+FROM threads t
+LEFT JOIN projects p ON t.project_id = p.project_id
+LEFT JOIN resources r ON p.sandbox_resource_id = r.id
+```
+
+Reference: `backend/core/threads/repo.py:21-46`
+
+## Message System
+
+Threads contain messages that represent the conversation flow:
+
+### Message Types
+
+- **User messages**: Input from human users
+- **Assistant messages**: Responses from the AI agent
+- **Tool messages**: Results from tool executions
+- **System messages**: Internal status and control messages
+
+### Message Storage
+
+Messages are stored separately from threads for efficient querying:
+
+```sql
+CREATE TABLE messages (
+    message_id TEXT PRIMARY KEY,
+    thread_id TEXT REFERENCES threads(thread_id),
+    type TEXT NOT NULL,  -- 'user', 'assistant', 'tool', 'system'
+    content TEXT,
+    metadata JSONB,
+    created_at TIMESTAMP
+)
+```
+
+## Thread Lifecycle
+
+### 1. Creation
+
+Threads are created when a user starts a new conversation:
+
+```python
+# backend/core/threads/repo.py:174-198
+thread = await create_thread(
+    thread_id=generate_id(),
+    project_id=project_id,
+    account_id=user_id,
+    name="New Chat"
+)
+```
+
+Reference: `backend/core/threads/repo.py:174-198`
+
+### 2. Message Exchange
+
+As the conversation progresses, messages are added:
+
+1. User sends a message
+2. Agent run is created
+3. Agent processes the message and responds
+4. Tool calls are executed (if needed)
+5. Final response is sent
+
+### 3. Updates
+
+Thread metadata can be updated:
+
+- Rename thread
+- Update visibility (public/private)
+- Add custom metadata
+
+### 4. Deletion
+
+Deleting a thread cascades to remove all associated data:
+
+```python
+# backend/core/threads/repo.py:137-156
+async def delete_thread_data(thread_id: str) -> bool:
+    # Delete agent runs
+    await execute_mutate(
+        "DELETE FROM agent_runs WHERE thread_id = :thread_id",
+        {"thread_id": thread_id}
+    )
+    
+    # Delete messages
+    await execute_mutate(
+        "DELETE FROM messages WHERE thread_id = :thread_id",
+        {"thread_id": thread_id}
+    )
+    
+    # Delete thread
+    result = await execute_mutate(
+        "DELETE FROM threads WHERE thread_id = :thread_id RETURNING thread_id",
+        {"thread_id": thread_id}
+    )
+```
+
+Reference: `backend/core/threads/repo.py:137-156`
+
+## Thread Search
+
+The platform includes semantic search capabilities for finding relevant threads and messages:
+
+### Vector Search
+
+Messages are embedded and stored in a vector database for similarity search:
+
+```python
+# Search across user's threads
+results = await thread_search.search(
+    query="How do I setup authentication?",
+    account_id=user_id,
+    limit=10
+)
+```
+
+Reference: `backend/core/threads/thread_search.py`
+
+### Search Features
+
+- **Semantic search**: Find messages by meaning, not just keywords
+- **Hybrid search**: Combine vector similarity with filters
+- **Metadata filtering**: Search within specific projects or date ranges
+- **Ranked results**: Most relevant conversations first
+
+## Thread Context Management
+
+### Context Window
+
+Threads maintain conversation history for the LLM's context window:
+
+1. **Recent messages**: Most recent N messages are included
+2. **Token limits**: Automatically truncate to fit model's context window
+3. **Summarization**: Long threads can be summarized to preserve context
+
+### Memory Systems
+
+Threads integrate with memory systems:
+
+- **Short-term**: Recent messages in current thread
+- **Long-term**: Knowledge base entries extracted from conversations
+- **Project memory**: Shared context across all threads in a project
+
+## Thread Streaming
+
+Thread responses are streamed in real-time using Redis Streams:
+
+### Stream Key Format
+
+```python
+stream_key = f"agent_run:{agent_run_id}:stream"
+```
+
+### Stream Events
+
+Clients subscribe to the stream and receive events:
+
+```json
+// Timing event
+{
+  "type": "timing",
+  "first_response_ms": 245.3,
+  "pipeline": "stateless"
+}
+
+// Assistant message
+{
+  "type": "assistant",
+  "content": "Here's the answer...",
+  "message_id": "msg_abc123"
+}
+
+// Tool call
+{
+  "type": "tool_call",
+  "tool_name": "web_search",
+  "status": "executing"
+}
+
+// Status update
+{
+  "type": "status",
+  "status": "completed",
+  "message": "Completed successfully"
+}
+```
+
+### Stream Lifecycle
+
+1. Stream created when agent run starts
+2. Events written as they occur
+3. TTL of 3600 seconds (configurable)
+4. Stream closed when run completes
+
+Reference: `backend/core/agents/runner/executor.py:48-189`
+
+## Performance Optimizations
+
+### Pagination
+
+Thread lists support efficient pagination:
+
+```python
+threads, total_count = await list_user_threads(
+    account_id=user_id,
+    limit=50,
+    offset=0
+)
+```
+
+The query uses `COUNT(*) OVER()` to get total count without an extra query.
+
+Reference: `backend/core/threads/repo.py:16-94`
+
+### Null Byte Sanitization
+
+Thread data is sanitized to prevent PostgreSQL null byte errors:
+
+```python
+def _sanitize_null_bytes(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace('\u0000', '')
+    elif isinstance(value, dict):
+        return {k: _sanitize_null_bytes(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [_sanitize_null_bytes(item) for item in value]
+    return value
+```
+
+Reference: `backend/core/threads/repo.py:7-14`
+
+### Efficient Joins
+
+Thread queries use LEFT JOINs to include related data in a single query:
+
+- Project information
+- Sandbox details
+- Total count (using window functions)
+
+This eliminates N+1 query problems when loading thread lists.
+
+## Thread Metadata
+
+Threads support flexible metadata storage:
+
+```json
+{
+  "metadata": {
+    "tags": ["support", "technical"],
+    "priority": "high",
+    "custom_field": "custom_value"
+  }
+}
+```
+
+Metadata is stored as JSONB for efficient querying and filtering.
+
+## Access Control
+
+### Thread Ownership
+
+Threads are owned by accounts:
+
+```python
+account_id = await get_thread_account_id(thread_id)
+if account_id != user_id:
+    raise PermissionError("Access denied")
+```
+
+Reference: `backend/core/threads/repo.py:125-128`
+
+### Public Threads
+
+Threads can be marked as public for sharing:
+
+```python
+thread = await get_thread_by_id(thread_id)
+if not thread['is_public'] and thread['account_id'] != user_id:
+    raise PermissionError("Thread is private")
+```
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    Learn about agents that execute within threads
+  </Card>
+  <Card title="Tools" icon="wrench" href="/concepts/tools">
+    Understand tools that agents can use in threads
+  </Card>
+  <Card title="Sandboxes" icon="box" href="/concepts/sandboxes">
+    Explore the execution environment for threads
+  </Card>
+  <Card title="MCP" icon="plug" href="/concepts/mcp">
+    See how MCP tools integrate with threads
+  </Card>
+</CardGroup>

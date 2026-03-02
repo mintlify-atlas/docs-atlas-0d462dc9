@@ -1,0 +1,542 @@
+---
+title: Model Context Protocol (MCP)
+description: Understanding MCP integration for external tool and data access
+---
+
+## Overview
+
+Model Context Protocol (MCP) is an open standard that enables agents to connect with external tools, APIs, and data sources. The platform provides comprehensive MCP support, allowing agents to access hundreds of integrations including GitHub, Slack, Google Workspace, databases, and custom services.
+
+## MCP Architecture
+
+### MCP Registry
+
+The `MCPRegistry` is the central component managing all MCP tools:
+
+```python
+# backend/core/agentpress/mcp_registry.py:64-78
+class MCPRegistry:
+    def __init__(self):
+        self._tools: Dict[str, MCPToolInfo] = {}
+        self._toolkit_mapping: Dict[str, Set[str]] = {}
+        self._status_index: Dict[MCPToolStatus, Set[str]] = {
+            status: set() for status in MCPToolStatus
+        }
+        self._schema_cache: Dict[str, Dict[str, Any]] = {}
+        self._initialized = False
+        self._redis_client = None
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:64-78`
+
+### MCP Tool Info
+
+Each MCP tool is tracked with comprehensive metadata:
+
+```python
+# backend/core/agentpress/mcp_registry.py:33-49
+@dataclass
+class MCPToolInfo:
+    tool_name: str
+    toolkit_slug: str  # e.g., "github", "slack"
+    mcp_config: Dict[str, Any]
+    status: MCPToolStatus = MCPToolStatus.DISCOVERED
+    
+    load_time_ms: Optional[float] = None
+    last_used_ms: Optional[float] = None
+    call_count: int = 0
+    
+    schema: Optional[Dict[str, Any]] = None
+    description: Optional[str] = None
+    instance: Optional[Any] = None
+    
+    last_error: Optional[str] = None
+    error_count: int = 0
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:33-49`
+
+### MCP Tool Status
+
+Tools progress through lifecycle states:
+
+```python
+# backend/core/agentpress/mcp_registry.py:25-30
+class MCPToolStatus(Enum):
+    DISCOVERED = "discovered"  # Tool found in configuration
+    LOADING = "loading"        # Schema being loaded
+    ACTIVE = "active"          # Ready to use
+    FAILED = "failed"          # Activation failed
+    DISABLED = "disabled"      # Manually disabled
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:25-30`
+
+## MCP Server Types
+
+The platform supports three types of MCP servers:
+
+### 1. HTTP/Streamable HTTP
+
+HTTP-based MCP servers using the streamable HTTP transport:
+
+```python
+# backend/core/agentpress/mcp_registry.py:487-525
+async def _load_http_mcp_schemas(self, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    url = config.get('url')
+    from mcp.client.streamable_http import streamablehttp_client
+    from mcp import ClientSession
+    
+    async with streamablehttp_client(url) as (read_stream, write_stream, _):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            tools_result = await session.list_tools()
+            
+            for tool in tools_result.tools:
+                schema = {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.inputSchema
+                    }
+                }
+                schemas[tool.name] = schema
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:487-525`
+
+### 2. SSE (Server-Sent Events)
+
+Server-Sent Events for real-time tool communication:
+
+```python
+# backend/core/agentpress/mcp_registry.py:419-485
+async def _load_sse_mcp_schemas(self, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    url = config.get('url')
+    headers = config.get('headers', {})
+    
+    from mcp.client.sse import sse_client
+    from mcp import ClientSession
+    
+    async with sse_client(url, headers=headers) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            tools_result = await session.list_tools()
+            # ... process tools
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:419-485`
+
+### 3. JSON/stdio (Local Processes)
+
+Local process-based MCP servers:
+
+```python
+# backend/core/agentpress/mcp_registry.py:527-571
+async def _load_json_mcp_schemas(self, config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    command = config.get('command')
+    
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    
+    server_params = StdioServerParameters(
+        command=command,
+        args=config.get("args", []),
+        env=config.get("env", {})
+    )
+    
+    async with stdio_client(server_params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            tools_result = await session.list_tools()
+            # ... process tools
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:527-571`
+
+## Schema Caching
+
+MCP schemas are cached in Redis for fast access:
+
+### Cache Strategy
+
+1. **Check Redis first**: Look for cached toolkit schemas
+2. **Cache miss**: Load from MCP server
+3. **Store in Redis**: Cache for 24 hours (configurable)
+4. **Opportunistic caching**: Cache all tools from toolkit, not just requested ones
+
+```python
+# backend/core/agentpress/mcp_registry.py:153-169
+async def _get_cached_toolkit_schemas(self, toolkit_slug: str) -> Optional[Dict[str, Dict[str, Any]]]:
+    if not await self._ensure_redis():
+        return None
+    
+    cache_key = f"{self.SCHEMA_CACHE_KEY_PREFIX}{toolkit_slug}"
+    cached_data = await self._redis_client.get(cache_key)
+    
+    if cached_data:
+        import json
+        schemas = json.loads(cached_data)
+        logger.info(f"⚡ [MCP SCHEMA CACHE] HIT for {toolkit_slug} ({len(schemas)} schemas)")
+        return schemas
+    
+    return None
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:153-169`
+
+### Cache TTL
+
+Schemas are cached for 24 hours by default:
+
+```python
+SCHEMA_CACHE_TTL_HOURS = 24
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:65`
+
+## Tool Discovery
+
+MCP tools are discovered through multiple methods:
+
+### 1. Composio Integration
+
+For Composio-based MCP tools:
+
+```python
+# Load from Composio profile
+profile_config = await profile_service.get_profile_config(profile_id, account_id)
+mcp_url = profile_config.get('mcp_url')
+
+# Discover tools
+result = await mcp_service.discover_custom_tools(
+    request_type="http",
+    config={"url": mcp_url}
+)
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:304-361`
+
+### 2. Custom MCP Servers
+
+For custom MCP servers:
+
+```python
+# Get config from tool info
+mcp_config = tool_info.mcp_config
+custom_type = mcp_config.get("customType", "http")
+config = mcp_config.get("config", {})
+
+# Load schemas based on type
+toolkit_schemas = await self._load_custom_mcp_schemas(custom_type, config)
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:261-300`
+
+## MCP Execution Context
+
+MCP tools execute within a context that tracks usage:
+
+```python
+# backend/core/agentpress/mcp_registry.py:52-61
+class MCPExecutionContext:
+    def __init__(self, thread_manager, user_context: Optional[Dict] = None):
+        self.thread_manager = thread_manager
+        self.user_context = user_context or {}
+        self.execution_stats = {
+            'tools_executed': 0,
+            'total_execution_time_ms': 0,
+            'cache_hits': 0,
+            'activation_requests': 0
+        }
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:52-61`
+
+## Tool Execution
+
+MCP tools are executed through the registry:
+
+```python
+# backend/core/agentpress/mcp_registry.py:573-619
+async def execute_tool(
+    self, 
+    tool_name: str, 
+    args: Dict[str, Any], 
+    context: MCPExecutionContext
+) -> ToolResult:
+    # 1. Validate tool exists
+    if not self.is_tool_available(tool_name):
+        return self._fail_response(f"MCP tool '{tool_name}' not found")
+    
+    # 2. Auto-activate if needed
+    if not self.is_tool_active(tool_name):
+        success = await self._auto_activate_tool(tool_name, context)
+        if not success:
+            return self._fail_response(f"Failed to activate: {tool_name}")
+    
+    # 3. Execute the tool
+    tool_info = self._tools[tool_name]
+    method = getattr(tool_info.instance, tool_name)
+    result = await method(**args) if args else await method()
+    
+    # 4. Update statistics
+    tool_info.call_count += 1
+    tool_info.last_used_ms = time.time() * 1000
+    context.execution_stats['tools_executed'] += 1
+    
+    return result
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:573-619`
+
+### Auto-Activation
+
+Tools are automatically activated on first use:
+
+```python
+# backend/core/agentpress/mcp_registry.py:621-665
+async def _auto_activate_tool(self, tool_name: str, context: MCPExecutionContext) -> bool:
+    self._update_tool_status(tool_name, MCPToolStatus.LOADING)
+    
+    # Check for cached schema (fast path)
+    tool_info = self._tools.get(tool_name)
+    cached_schema = tool_info.schema if tool_info else None
+    
+    if cached_schema:
+        logger.info(f"⚡ [MCP ACTIVATION] Using cached schema (skipping MCP call)")
+        context.execution_stats['cache_hits'] += 1
+    
+    # Use JIT loader to activate
+    from core.jit import JITLoader
+    result = await JITLoader.activate_mcp_tool(tool_name, context.thread_manager)
+    
+    if hasattr(result, 'tool_name') and result.tool_name == tool_name:
+        # Extract instance and schema from main registry
+        main_registry = context.thread_manager.tool_registry
+        tool_data = main_registry.tools[tool_name]
+        instance = tool_data["instance"]
+        schema = tool_data["schema"].schema
+        
+        # Register in MCP registry
+        return self.activate_tool(tool_name, instance, schema)
+    
+    return False
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:621-665`
+
+## Schema Pre-warming
+
+Schemas can be pre-loaded at startup for faster first use:
+
+```python
+# backend/core/agentpress/mcp_registry.py:671-690
+async def prewarm_schemas(self, account_id: Optional[str] = None) -> int:
+    toolkits = self.get_available_toolkits()
+    logger.info(f"🔥 [MCP SCHEMA CACHE] Pre-warming schemas for {len(toolkits)} toolkits...")
+    
+    warmed_count = 0
+    for toolkit_slug in toolkits:
+        cached = await self._get_cached_toolkit_schemas(toolkit_slug)
+        if cached:
+            for tool_name, schema in cached.items():
+                if tool_name in self._tools and not self._tools[tool_name].schema:
+                    self._tools[tool_name].schema = schema
+                    warmed_count += 1
+    
+    logger.info(f"✅ [MCP SCHEMA CACHE] Pre-warmed {warmed_count} schemas from Redis")
+    return warmed_count
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:671-690`
+
+## Registry Operations
+
+### Register Tool
+
+```python
+tool_info = MCPToolInfo(
+    tool_name="GITHUB_CREATE_ISSUE",
+    toolkit_slug="github",
+    mcp_config=config,
+    status=MCPToolStatus.DISCOVERED
+)
+registry.register_tool_info(tool_info)
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:80-92`
+
+### Activate Tool
+
+```python
+registry.activate_tool(
+    tool_name="GITHUB_CREATE_ISSUE",
+    instance=tool_instance,
+    schema=openapi_schema
+)
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:94-108`
+
+### Query Tools
+
+```python
+# By status
+active_tools = registry.get_tools_by_status(MCPToolStatus.ACTIVE)
+
+# By toolkit
+github_tools = registry.get_tools_by_toolkit("github")
+
+# Check availability
+if registry.is_tool_active("GITHUB_CREATE_ISSUE"):
+    # Tool is ready to use
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:126-140`
+
+### Get Statistics
+
+```python
+stats = registry.get_registry_stats()
+# Returns:
+# {
+#   "total_tools": 150,
+#   "active_tools": 45,
+#   "failed_tools": 2,
+#   "toolkits": 12,
+#   "status_breakdown": {...}
+# }
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:693-703`
+
+## Integration with Agent Loader
+
+The MCP registry is initialized from the JIT loader:
+
+```python
+# backend/core/agentpress/mcp_registry.py:719-741
+def init_mcp_registry_from_loader(mcp_loader) -> None:
+    registry = get_mcp_registry()
+    
+    # Clear stale data
+    registry._tools.clear()
+    registry._toolkit_mapping.clear()
+    registry._status_index = {status: set() for status in MCPToolStatus}
+    
+    # Register all discovered tools
+    for tool_name, tool_info in mcp_loader.tool_map.items():
+        mcp_tool_info = MCPToolInfo(
+            tool_name=tool_name,
+            toolkit_slug=tool_info.toolkit_slug,
+            mcp_config=tool_info.mcp_config,
+            status=MCPToolStatus.DISCOVERED
+        )
+        registry.register_tool_info(mcp_tool_info)
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:719-741`
+
+## Description Enrichment
+
+Some tools have their descriptions enriched with usage hints:
+
+```python
+# backend/core/agentpress/mcp_registry.py:10-22
+_GMAIL_ATTACHMENT_TOOLS = {
+    "GMAIL_SEND_EMAIL", 
+    "GMAIL_CREATE_EMAIL_DRAFT", 
+    "GMAIL_REPLY_TO_THREAD"
+}
+
+_GMAIL_ATTACHMENT_HINT = (
+    "\n\nTo attach files: first use composio_upload to upload the file. "
+    "The response includes attachment data (s3key, mimetype, name). "
+    "Pass these to the attachment parameter as: "
+    '{"s3key": "<s3key>", "mimetype": "<mimetype>", "name": "<name>"}. '
+    "IMPORTANT: When attaching presentations, you MUST always export and attach the .pptx file."
+)
+
+def _enrich_description(tool_name: str, description: str) -> str:
+    if tool_name.upper() in _GMAIL_ATTACHMENT_TOOLS:
+        return description + _GMAIL_ATTACHMENT_HINT
+    return description
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:10-22`
+
+## Singleton Pattern
+
+The MCP registry uses a singleton pattern:
+
+```python
+# backend/core/agentpress/mcp_registry.py:706-716
+_mcp_registry: Optional[MCPRegistry] = None
+
+def get_mcp_registry() -> MCPRegistry:
+    """Get the global MCP registry instance (singleton)"""
+    global _mcp_registry
+    if _mcp_registry is None:
+        _mcp_registry = MCPRegistry()
+    return _mcp_registry
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:706-716`
+
+## Performance Optimizations
+
+### Multi-Level Caching
+
+1. **In-memory cache**: Tool schemas cached in registry
+2. **Redis cache**: Toolkit schemas cached for 24 hours
+3. **Opportunistic caching**: All toolkit tools cached when one is loaded
+
+### Batch Loading
+
+When loading multiple MCP tools, schemas are batched by toolkit:
+
+```python
+# Group by toolkit
+composio_toolkits = {}  # Composio-based MCPs
+custom_toolkits = {}     # Custom MCPs
+
+for tool_name in tool_names:
+    toolkit_slug = tool_info.toolkit_slug
+    if toolkit_slug.startswith("custom_"):
+        custom_toolkits[toolkit_slug].append(tool_name)
+    else:
+        composio_toolkits[toolkit_slug].append(tool_name)
+
+# Load by toolkit (one request per toolkit)
+for toolkit_slug, tools in composio_toolkits.items():
+    schemas = await load_toolkit_schemas(toolkit_slug)
+```
+
+Reference: `backend/core/agentpress/mcp_registry.py:236-300`
+
+### Lazy Activation
+
+MCP tools are not activated until first use, saving:
+
+- Startup time
+- Memory usage
+- Network calls to MCP servers
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Tools" icon="wrench" href="/concepts/tools">
+    Learn about the broader tool system
+  </Card>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    Understand how agents use MCP tools
+  </Card>
+  <Card title="Credentials" icon="key" href="/api-reference/credentials">
+    Manage MCP authentication
+  </Card>
+  <Card title="Profiles" icon="user" href="/api-reference/profiles">
+    Configure MCP profiles
+  </Card>
+</CardGroup>

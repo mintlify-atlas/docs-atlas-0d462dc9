@@ -1,0 +1,298 @@
+---
+title: 'Setup Guide'
+description: 'Step-by-step instructions to install and configure Kortix'
+---
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+- Git installed
+- Docker installed and running (check with `docker --version`)
+- For manual setup: Node.js 18+, Python 3.11+, pnpm, and uv
+
+## Clone the Repository
+
+First, clone the Kortix repository:
+
+```bash
+git clone https://github.com/kortix-ai/suna.git
+cd suna
+```
+
+## Setup Methods
+
+Kortix offers two setup methods. The setup wizard will guide you through choosing one.
+
+### Docker Setup
+
+**Best for:** Production deployments, quick testing, users who prefer containerized environments
+
+**Pros:**
+- Fastest setup
+- Isolated environments
+- Easy updates and rollbacks
+- Consistent across different systems
+
+**Cons:**
+- Limited to cloud Supabase only (local Supabase not supported)
+- Slightly higher resource usage
+
+### Manual Setup
+
+**Best for:** Development, customization, debugging
+
+**Pros:**
+- Full control over each service
+- Easier to debug and modify
+- Better for development workflows
+- Lower resource overhead
+
+**Cons:**
+- More complex setup
+- Requires managing multiple processes
+- Limited to cloud Supabase only
+
+<Warning>
+**Important:** Both setup methods currently only support cloud Supabase. Local Supabase integration is not available due to Docker networking limitations. See [GitHub issue #1920](https://github.com/kortix-ai/suna/issues/1920) for updates.
+</Warning>
+
+## Run the Setup Wizard
+
+The interactive setup wizard configures all required services:
+
+```bash
+python setup.py
+```
+
+### What the Wizard Does
+
+The wizard guides you through these steps:
+
+<Steps>
+  <Step title="Choose Setup Method">
+    Select between Docker Compose or Manual setup based on your needs.
+  </Step>
+  
+  <Step title="Check Requirements">
+    Verifies all required tools are installed (Git, Docker, Node.js, etc.).
+  </Step>
+  
+  <Step title="Configure Supabase">
+    Set up your Supabase project:
+    - Project URL
+    - Anon key
+    - Service role key
+    - JWT secret (critical for authentication)
+    - Database connection URL
+    
+    Find these in your Supabase Dashboard → Project Settings → API
+  </Step>
+  
+  <Step title="Configure Daytona">
+    Enter your Daytona API key for agent execution environments.
+    
+    Get your key from [app.daytona.io/keys](https://app.daytona.io/keys)
+  </Step>
+  
+  <Step title="Select Main LLM Provider">
+    Choose your primary LLM provider:
+    - Anthropic Claude
+    - AWS Bedrock
+    - Grok via OpenRouter
+    - OpenAI via OpenRouter
+    - MiniMax via OpenRouter
+    - Custom model
+  </Step>
+  
+  <Step title="Configure Optional Services">
+    Optionally configure:
+    - Additional LLM providers
+    - Search APIs (Tavily, Firecrawl, Serper, Exa)
+    - RapidAPI
+    - Webhooks
+    - MCP (Model Context Protocol)
+  </Step>
+  
+  <Step title="Configure Composio">
+    Enter your Composio API key (required for tool integrations).
+    
+    Get your key from [app.composio.dev/settings/api-keys](https://app.composio.dev/settings/api-keys)
+  </Step>
+  
+  <Step title="Write Configuration Files">
+    The wizard automatically creates:
+    - `backend/.env` - Backend configuration
+    - `apps/frontend/.env.local` - Frontend configuration
+    - `.setup_progress` - Resume data (can be deleted after setup)
+  </Step>
+</Steps>
+
+<Info>
+The wizard saves progress after each step. If interrupted, just run `python setup.py` again to resume.
+</Info>
+
+## Start Services
+
+After completing the setup wizard, start Kortix:
+
+```bash
+python start.py
+```
+
+### Start Script Options
+
+The start script automatically detects your setup method:
+
+```bash
+# Interactive mode (shows menu)
+python start.py
+
+# Start all services
+python start.py start
+
+# Stop all services
+python start.py stop
+
+# Show service status
+python start.py status
+
+# Restart all services
+python start.py restart
+
+# Force start without confirmation
+python start.py start -f
+```
+
+## Docker Setup
+
+If you chose Docker Compose, services start automatically:
+
+```bash
+python start.py start
+```
+
+This runs:
+- **Redis** - Message queue and caching (port 6379)
+- **Backend** - API server (port 8000)
+- **Frontend** - Web interface (port 3000)
+
+### Docker Commands
+
+```bash
+# View logs
+docker compose logs -f
+
+# View specific service logs
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# Check service status
+docker compose ps
+
+# Stop all services
+python start.py stop
+# or
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
+```
+
+## Manual Setup
+
+If you chose Manual setup, the start script launches services in the background:
+
+```bash
+python start.py start
+```
+
+This starts:
+1. **Redis** (Docker container)
+2. **Backend** (native process, logged to `backend.log`)
+3. **Frontend** (native process, logged to `frontend.log`)
+
+### Manual Commands
+
+View logs:
+```bash
+# View both backend and frontend logs
+tail -f backend.log frontend.log
+
+# View backend only
+tail -f backend.log
+
+# View frontend only
+tail -f frontend.log
+```
+
+Start services individually:
+```bash
+# Start Redis
+docker compose up -d redis
+
+# Start Backend (in a terminal)
+cd backend && uv run api.py
+
+# Start Frontend (in another terminal)
+cd apps/frontend && pnpm run dev
+```
+
+<Warning>
+On macOS/Linux, background processes are logged to files. On Windows, services open in separate command windows.
+</Warning>
+
+## Access Kortix
+
+Once all services are running:
+
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+
+## Verify Installation
+
+<Steps>
+  <Step title="Check Service Status">
+    ```bash
+    python start.py status
+    ```
+    All services should show as "Running".
+  </Step>
+  
+  <Step title="Access Frontend">
+    Open http://localhost:3000 in your browser.
+  </Step>
+  
+  <Step title="Create Account">
+    Sign up with your email. Supabase handles authentication.
+  </Step>
+  
+  <Step title="Test Agent">
+    Try the Kortix Super Worker agent to verify everything works.
+  </Step>
+</Steps>
+
+## Update Configuration
+
+To add or update API keys after initial setup:
+
+```bash
+python setup.py
+```
+
+The wizard detects existing configuration and offers:
+- **Add/Update API Keys** - Configure additional LLM providers, search APIs, etc.
+- **Clear setup and start fresh** - Remove all configuration and restart
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/self-hosting/configuration">
+    Learn about all available configuration options
+  </Card>
+  
+  <Card title="Deployment" icon="cloud" href="/self-hosting/deployment">
+    Deploy to production environments
+  </Card>
+</CardGroup>

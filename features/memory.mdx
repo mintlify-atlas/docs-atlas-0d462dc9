@@ -1,0 +1,503 @@
+---
+title: Memory System
+description: Enable your agents to learn and remember information from conversations over time
+---
+
+The Memory System allows Kortix agents to extract, store, and recall information from past conversations. This creates a personalized experience where agents remember user preferences, facts, and context across multiple sessions.
+
+## How Memory Works
+
+Kortix's memory system operates in three phases:
+
+<Steps>
+  <Step title="Extraction">
+    AI analyzes conversations to identify memorable information
+  </Step>
+  
+  <Step title="Storage">
+    Memories are stored with embeddings for semantic search
+  </Step>
+  
+  <Step title="Retrieval">
+    Relevant memories are retrieved and injected into new conversations
+  </Step>
+</Steps>
+
+## Memory Types
+
+The system categorizes memories into four types:
+
+### Fact
+Objective information about the user:
+- "Works at Acme Corp as a software engineer"
+- "Has two children, ages 5 and 8"
+- "Lives in San Francisco"
+
+### Preference
+User likes, dislikes, and preferences:
+- "Prefers concise, technical explanations"
+- "Likes Python over JavaScript"
+- "Wants code examples with every explanation"
+
+### Context
+Situational information for understanding requests:
+- "Working on a React migration project"
+- "Learning machine learning fundamentals"
+- "Building a startup in the healthcare space"
+
+### Conversation Summary
+Key points from previous conversations:
+- "Discussed database optimization strategies on Jan 15"
+- "Asked about Docker deployment best practices"
+- "Requested help with API authentication flow"
+
+## Memory Extraction
+
+Memories are extracted automatically after conversations using AI analysis:
+
+<CodeGroup>
+```python extraction_service.py (lines 62-95)
+async def extract_memories(
+    self,
+    messages: List[Dict[str, Any]],
+    account_id: str,
+    thread_id: str
+) -> List[ExtractedMemory]:
+    if not config.ENABLE_MEMORY:
+        return []
+    
+    conversation_text = self._format_conversation(messages)
+    
+    if len(conversation_text.strip()) < 20:
+        return []
+    
+    prompt = MEMORY_EXTRACTION_PROMPT.format(conversation=conversation_text)
+    
+    response = await self.client.acompletion(
+        model=resolved_model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+        max_tokens=2000,
+        timeout=60
+    )
+    
+    # Parse and validate extracted memories
+    result = json.loads(response.choices[0].message.content)
+    
+    if not result.get('worth_extracting', True):
+        return []
+    
+    memories = []
+    for mem in result.get('memories', []):
+        memories.append(ExtractedMemory(
+            content=mem['content'],
+            memory_type=MemoryType(mem['memory_type']),
+            confidence_score=float(mem.get('confidence_score', 0.8)),
+            metadata=mem.get('metadata', {})
+        ))
+    
+    return memories
+```
+</CodeGroup>
+
+### Extraction Criteria
+
+The AI only extracts memories when:
+- Conversation has meaningful content (> 20 characters)
+- Information is worth remembering
+- User shared personal information or preferences
+- Context could be useful in future conversations
+
+## Memory Retrieval
+
+Memories are retrieved using semantic similarity search:
+
+<CodeGroup>
+```python retrieval_service.py (lines 16-88)
+async def retrieve_memories(
+    self,
+    account_id: str,
+    query_text: str,
+    tier_name: str,
+    similarity_threshold: float = 0.1
+) -> List[MemoryItem]:
+    if not config.ENABLE_MEMORY or not is_memory_enabled(tier_name):
+        return []
+    
+    memory_config = get_memory_config(tier_name)
+    retrieval_limit = memory_config.get('retrieval_limit', 0)
+    
+    # Check cache first
+    cache_key = f"memories:retrieved:{account_id}:{hash(query_text)}"
+    cached = await Cache.get(cache_key)
+    if cached:
+        return [self._dict_to_memory_item(m) for m in cached]
+    
+    # Generate embedding for query
+    query_embedding = await self.embedding_service.embed_text(query_text)
+    
+    # Search using vector similarity
+    result = await client.rpc(
+        'search_memories_by_similarity',
+        {
+            'p_account_id': account_id,
+            'p_query_embedding': query_embedding,
+            'p_limit': retrieval_limit,
+            'p_similarity_threshold': similarity_threshold
+        }
+    ).execute()
+    
+    memories = []
+    for row in result.data:
+        memory = MemoryItem(
+            memory_id=row['memory_id'],
+            account_id=account_id,
+            content=row['content'],
+            memory_type=MemoryType(row['memory_type']),
+            confidence_score=row['confidence_score'],
+            metadata=row.get('metadata', {})
+        )
+        memories.append(memory)
+    
+    # Cache results
+    await Cache.set(cache_key, [self._memory_item_to_dict(m) for m in memories])
+    
+    return memories
+```
+</CodeGroup>
+
+### Retrieval Limits by Tier
+
+Different subscription tiers have different memory limits:
+
+| Tier | Max Memories | Retrieval Limit |
+|------|--------------|------------------|
+| Free | 0 | 0 |
+| Basic | 100 | 5 |
+| Pro | 500 | 10 |
+| Enterprise | Unlimited | 20 |
+
+## Using the Memory API
+
+### List Memories
+
+```bash
+GET /api/memory/memories?page=1&limit=50&memory_type=preference
+```
+
+**Response:**
+```json
+{
+  "memories": [
+    {
+      "memory_id": "mem_abc123",
+      "content": "Prefers TypeScript over JavaScript for new projects",
+      "memory_type": "preference",
+      "confidence_score": 0.95,
+      "source_thread_id": "thread_xyz789",
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "total": 42,
+  "page": 1,
+  "limit": 50,
+  "pages": 1
+}
+```
+
+### Get Memory Statistics
+
+```bash
+GET /api/memory/stats
+```
+
+**Response:**
+```json
+{
+  "total_memories": 42,
+  "memories_by_type": {
+    "fact": 15,
+    "preference": 12,
+    "context": 10,
+    "conversation_summary": 5
+  },
+  "oldest_memory": "2024-01-01T00:00:00Z",
+  "newest_memory": "2024-01-15T10:30:00Z",
+  "max_memories": 100,
+  "retrieval_limit": 5,
+  "tier_name": "basic",
+  "memory_enabled": true
+}
+```
+
+### Create Memory Manually
+
+```bash
+POST /api/memory/memories
+Content-Type: application/json
+
+{
+  "content": "User is building a mobile app with React Native",
+  "memory_type": "context",
+  "confidence_score": 0.9,
+  "metadata": {
+    "project": "mobile-app",
+    "technology": "react-native"
+  }
+}
+```
+
+### Delete a Memory
+
+```bash
+DELETE /api/memory/memories/{memory_id}
+```
+
+### Delete All Memories
+
+```bash
+DELETE /api/memory/memories?confirm=true
+```
+
+<Warning>
+  Deleting all memories is permanent and cannot be undone. Use with caution.
+</Warning>
+
+## Memory Settings
+
+### Global Memory Settings
+
+Enable or disable memory at the account level:
+
+```bash
+GET /api/memory/settings
+```
+
+**Response:**
+```json
+{
+  "memory_enabled": true
+}
+```
+
+### Update Memory Settings
+
+```bash
+PUT /api/memory/settings
+Content-Type: application/json
+
+{
+  "enabled": false
+}
+```
+
+### Thread-Level Memory Control
+
+Control memory on a per-conversation basis:
+
+```bash
+GET /api/memory/thread/{thread_id}/settings
+```
+
+**Response:**
+```json
+{
+  "thread_id": "thread_xyz789",
+  "memory_enabled": true
+}
+```
+
+### Update Thread Memory Settings
+
+```bash
+PUT /api/memory/thread/{thread_id}/settings
+Content-Type: application/json
+
+{
+  "enabled": false
+}
+```
+
+<Note>
+  Thread-level settings override global settings. If you disable memory for a specific thread, no memories will be extracted or retrieved for that conversation.
+</Note>
+
+## Memory in Agent Prompts
+
+Retrieved memories are formatted and injected into agent prompts:
+
+<CodeGroup>
+```python retrieval_service.py (lines 228-259)
+def format_memories_for_prompt(self, memories: List[MemoryItem]) -> str:
+    if not memories:
+        return ""
+    
+    sections = {
+        MemoryType.FACT: [],
+        MemoryType.PREFERENCE: [],
+        MemoryType.CONTEXT: [],
+        MemoryType.CONVERSATION_SUMMARY: []
+    }
+    
+    for memory in memories:
+        sections[memory.memory_type].append(memory.content)
+    
+    formatted_parts = []
+    
+    if sections[MemoryType.FACT]:
+        formatted_parts.append("Personal Facts:\n- " + "\n- ".join(sections[MemoryType.FACT]))
+    
+    if sections[MemoryType.PREFERENCE]:
+        formatted_parts.append("Preferences:\n- " + "\n- ".join(sections[MemoryType.PREFERENCE]))
+    
+    if sections[MemoryType.CONTEXT]:
+        formatted_parts.append("Context:\n- " + "\n- ".join(sections[MemoryType.CONTEXT]))
+    
+    if sections[MemoryType.CONVERSATION_SUMMARY]:
+        formatted_parts.append("Past Conversations:\n- " + "\n- ".join(sections[MemoryType.CONVERSATION_SUMMARY]))
+    
+    return "# What You Remember About This User\n\n" + "\n\n".join(formatted_parts)
+```
+</CodeGroup>
+
+**Example formatted memory:**
+
+```text
+# What You Remember About This User
+
+Personal Facts:
+- Works as a senior engineer at TechCorp
+- Based in Austin, Texas
+- Has 8 years of Python experience
+
+Preferences:
+- Prefers detailed technical explanations
+- Likes code examples with comments
+- Wants performance-focused solutions
+
+Context:
+- Building a microservices architecture
+- Migrating from monolith to containers
+- Using Kubernetes for orchestration
+```
+
+## Background Processing
+
+Memory extraction runs asynchronously to avoid slowing down conversations:
+
+1. **Conversation completes**
+2. **Job queued** for extraction
+3. **Worker processes** the conversation
+4. **Memories stored** with embeddings
+5. **Cache invalidated** for fresh retrieval
+
+<CodeGroup>
+```python background_jobs.py
+async def process_memory_extraction_job(
+    thread_id: str,
+    agent_run_id: str,
+    account_id: str
+):
+    # Fetch conversation messages
+    messages = await fetch_messages(thread_id, agent_run_id)
+    
+    # Extract memories using AI
+    memories = await extraction_service.extract_memories(
+        messages=messages,
+        account_id=account_id,
+        thread_id=thread_id
+    )
+    
+    # Store with embeddings
+    for memory in memories:
+        embedding = await embedding_service.embed_text(memory.content)
+        await store_memory(account_id, memory, embedding)
+    
+    # Invalidate cache
+    await invalidate_cache(account_id)
+```
+</CodeGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Review extracted memories">
+    Periodically review auto-extracted memories to ensure accuracy. Delete or edit memories that are incorrect or outdated.
+  </Accordion>
+
+  <Accordion title="Use manual creation sparingly">
+    Let the AI extract memories automatically in most cases. Manual creation is best for critical facts or preferences you want to ensure are remembered.
+  </Accordion>
+
+  <Accordion title="Monitor memory count">
+    Stay aware of your tier's memory limits. Delete old or irrelevant memories to make room for new ones.
+  </Accordion>
+
+  <Accordion title="Disable for sensitive conversations">
+    Use thread-level memory settings to disable memory extraction for conversations containing sensitive information.
+  </Accordion>
+
+  <Accordion title="Leverage memory types">
+    Different memory types serve different purposes. Facts are objective, preferences guide behavior, context provides background, and summaries reference past interactions.
+  </Accordion>
+</AccordionGroup>
+
+## Privacy and Security
+
+### Data Storage
+- Memories are stored encrypted at rest
+- Each memory is tied to a specific account
+- Users can delete all memories at any time
+
+### Access Control
+- Only the account owner can view their memories
+- Memories are never shared between accounts
+- API access requires authentication
+
+### Retention
+- Memories persist until manually deleted
+- Deleting a thread does not delete associated memories
+- Account deletion removes all memories
+
+## Troubleshooting
+
+### Memories Not Being Extracted
+
+- **Check settings**: Verify memory is enabled globally and for the thread
+- **Check tier**: Ensure your subscription tier supports memory
+- **Review conversation**: Very short conversations may not generate memories
+- **Check logs**: Look for extraction errors in server logs
+
+### Irrelevant Memories Retrieved
+
+- **Adjust threshold**: Lower the similarity threshold for stricter matching
+- **Delete irrelevant memories**: Remove memories that aren't useful
+- **Improve queries**: More specific queries retrieve more relevant memories
+
+### Memory Limit Reached
+
+- **Delete old memories**: Remove outdated or less useful memories
+- **Upgrade tier**: Higher tiers support more memories
+- **Be selective**: Not every fact needs to be remembered
+
+## API Reference
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/memory/memories` | List memories with pagination |
+| GET | `/memory/stats` | Get memory statistics |
+| POST | `/memory/memories` | Create memory manually |
+| DELETE | `/memory/memories/{id}` | Delete specific memory |
+| DELETE | `/memory/memories` | Delete all memories |
+| GET | `/memory/settings` | Get global memory settings |
+| PUT | `/memory/settings` | Update global settings |
+| GET | `/memory/thread/{id}/settings` | Get thread memory settings |
+| PUT | `/memory/thread/{id}/settings` | Update thread settings |
+
+<Card title="See also" icon="link">
+  - [Knowledge Base](/features/knowledge-base)
+  - [Agent Configuration](/agents/agent-builder)
+  - [Introduction](/introduction)
+</Card>

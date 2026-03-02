@@ -1,0 +1,718 @@
+---
+title: 'Troubleshooting'
+description: 'Common issues and solutions for self-hosted Kortix'
+---
+
+## Setup Issues
+
+### Setup Wizard Fails to Start
+
+**Problem:** `python setup.py` crashes or shows dependency errors.
+
+**Solution:**
+
+<Steps>
+  <Step title="Check Python Version">
+    ```bash
+    python --version  # Should be 3.11+
+    ```
+    
+    If version is too old, install Python 3.11 or newer.
+  </Step>
+  
+  <Step title="Install Dependencies">
+    ```bash
+    pip install pydantic rich
+    ```
+    
+    Or use the setup script's auto-install feature.
+  </Step>
+  
+  <Step title="Try Alternative Command">
+    ```bash
+    python -m setup
+    ```
+  </Step>
+</Steps>
+
+### Docker Not Running
+
+**Problem:** Setup wizard reports "Docker is not running."
+
+**Solution:**
+
+```bash
+# Start Docker (varies by OS)
+
+# macOS/Windows
+# Open Docker Desktop application
+
+# Linux
+sudo systemctl start docker
+
+# Verify Docker is running
+docker ps
+```
+
+### Invalid Supabase Credentials
+
+**Problem:** Setup completes but authentication fails with "alg value is not allowed."
+
+**Solution:**
+
+The JWT secret doesn't match exactly.
+
+<Steps>
+  <Step title="Get Correct JWT Secret">
+    1. Go to Supabase Dashboard → Project Settings → API
+    2. Scroll to "JWT Settings"
+    3. Copy the JWT Secret **exactly** (including any special characters)
+  </Step>
+  
+  <Step title="Update Configuration">
+    ```bash
+    python setup.py
+    # Select "Add/Update API Keys"
+    # Re-enter Supabase credentials
+    ```
+  </Step>
+  
+  <Step title="Restart Services">
+    ```bash
+    python start.py restart
+    ```
+  </Step>
+</Steps>
+
+### Database Connection Fails
+
+**Problem:** Backend logs show "could not connect to database."
+
+**Solution:**
+
+<CodeGroup>
+```bash Check Connection String
+# Verify DATABASE_URL format
+cat backend/.env | grep DATABASE_URL
+
+# Should look like:
+# postgresql://postgres.xxx:password@aws-0-us-west-1.pooler.supabase.com:6543/postgres
+```
+
+```bash Test Connection
+# Install psql if not available
+sudo apt install postgresql-client
+
+# Test connection
+psql "postgresql://postgres.xxx:password@aws-0-us-west-1.pooler.supabase.com:6543/postgres"
+```
+</CodeGroup>
+
+Common issues:
+- Wrong password in connection string
+- Using Session pooler instead of Transaction pooler (should use port 6543)
+- IP restrictions in Supabase (check Project Settings → Database → Network Restrictions)
+
+## Service Startup Issues
+
+### Services Don't Start
+
+**Problem:** `python start.py` shows services as stopped.
+
+**Solution:**
+
+<Tabs>
+  <Tab title="Docker Setup">
+    ```bash
+    # Check Docker Compose logs
+    docker compose logs
+    
+    # Check specific service
+    docker compose logs backend
+    docker compose logs frontend
+    
+    # Restart services
+    docker compose down
+    docker compose up -d
+    ```
+  </Tab>
+  
+  <Tab title="Manual Setup">
+    ```bash
+    # Check log files
+    tail -f backend.log
+    tail -f frontend.log
+    
+    # Manually start services
+    
+    # Terminal 1: Redis
+    docker compose up redis -d
+    
+    # Terminal 2: Backend
+    cd backend && uv run api.py
+    
+    # Terminal 3: Frontend
+    cd apps/frontend && pnpm run dev
+    ```
+  </Tab>
+</Tabs>
+
+### Port Already in Use
+
+**Problem:** "Address already in use" error for ports 3000 or 8000.
+
+**Solution:**
+
+```bash
+# Find process using port 3000
+lsof -i :3000  # macOS/Linux
+netstat -ano | findstr :3000  # Windows
+
+# Kill process
+kill -9 <PID>  # macOS/Linux
+taskkill /F /PID <PID>  # Windows
+
+# Or use different ports
+# Edit docker-compose.yaml
+ports:
+  - "3001:3000"  # Frontend
+  - "8001:8000"  # Backend
+```
+
+### Redis Connection Failed
+
+**Problem:** Backend can't connect to Redis.
+
+**Solution:**
+
+```bash
+# Check Redis is running
+docker compose ps redis
+
+# Start Redis if stopped
+docker compose up -d redis
+
+# Test Redis connection
+redis-cli ping  # Should return PONG
+
+# Check Redis logs
+docker compose logs redis
+```
+
+## Runtime Issues
+
+### Frontend Shows 502 Bad Gateway
+
+**Problem:** Frontend loads but shows "502 Bad Gateway" errors.
+
+**Solution:**
+
+Backend is not running or not reachable.
+
+<Steps>
+  <Step title="Check Backend Status">
+    ```bash
+    # Test backend directly
+    curl http://localhost:8000/v1/health-docker
+    
+    # Should return: {"status":"healthy"}
+    ```
+  </Step>
+  
+  <Step title="Check Backend Logs">
+    ```bash
+    # Docker
+    docker compose logs backend
+    
+    # Manual
+    tail -f backend.log
+    ```
+  </Step>
+  
+  <Step title="Verify Configuration">
+    Check `apps/frontend/.env.local`:
+    ```bash
+    NEXT_PUBLIC_BACKEND_URL=http://localhost:8000/v1
+    ```
+  </Step>
+</Steps>
+
+### Agent Execution Fails
+
+**Problem:** Agents fail to execute with "Daytona connection error."
+
+**Solution:**
+
+<Steps>
+  <Step title="Verify Daytona API Key">
+    ```bash
+    # Check backend/.env
+    cat backend/.env | grep DAYTONA_API_KEY
+    ```
+  </Step>
+  
+  <Step title="Test Daytona Connection">
+    ```bash
+    curl -H "Authorization: Bearer YOUR_DAYTONA_API_KEY" \
+      https://app.daytona.io/api/health
+    ```
+  </Step>
+  
+  <Step title="Check Daytona Quota">
+    Visit [app.daytona.io](https://app.daytona.io) and check your usage limits.
+  </Step>
+</Steps>
+
+### LLM API Errors
+
+**Problem:** Agents return "LLM API error" or rate limit errors.
+
+**Solution:**
+
+<Tabs>
+  <Tab title="Rate Limits">
+    You've hit API rate limits.
+    
+    - Check your LLM provider dashboard for limits
+    - Upgrade to higher tier plan
+    - Add additional LLM providers as fallbacks
+  </Tab>
+  
+  <Tab title="Invalid API Key">
+    ```bash
+    # Re-run setup to update keys
+    python setup.py
+    # Select "Add/Update API Keys"
+    
+    # Restart services
+    python start.py restart
+    ```
+  </Tab>
+  
+  <Tab title="Wrong Model Selected">
+    ```bash
+    # Check MAIN_LLM configuration
+    cat backend/.env | grep MAIN_LLM
+    
+    # Verify you have the required API key
+    # For anthropic: ANTHROPIC_API_KEY
+    # For bedrock: AWS_BEARER_TOKEN_BEDROCK
+    # For grok/openai/minimax: OPENROUTER_API_KEY
+    ```
+  </Tab>
+</Tabs>
+
+### Memory Issues
+
+**Problem:** Backend crashes with "killed" or out-of-memory errors.
+
+**Solution:**
+
+<Tabs>
+  <Tab title="Docker">
+    Increase Docker memory limits:
+    
+    Edit `docker-compose.yaml`:
+    ```yaml
+    services:
+      backend:
+        deploy:
+          resources:
+            limits:
+              memory: 4G  # Increase from default
+    ```
+    
+    Restart:
+    ```bash
+    docker compose down
+    docker compose up -d
+    ```
+  </Tab>
+  
+  <Tab title="System">
+    Your system doesn't have enough RAM.
+    
+    - Close other applications
+    - Upgrade system RAM
+    - Use a cloud instance with more memory
+  </Tab>
+</Tabs>
+
+## Deployment Issues
+
+### ECS Task Fails to Start
+
+**Problem:** ECS tasks fail health checks and restart continuously.
+
+**Solution:**
+
+<Steps>
+  <Step title="Check Task Logs">
+    AWS Console → ECS → Cluster → Service → Logs
+    
+    Or via CLI:
+    ```bash
+    aws logs tail /ecs/suna-backend --follow
+    ```
+  </Step>
+  
+  <Step title="Verify Secrets">
+    Ensure AWS Secrets Manager has all required environment variables:
+    ```bash
+    aws secretsmanager get-secret-value \
+      --secret-id suna-env-prod \
+      --query SecretString
+    ```
+  </Step>
+  
+  <Step title="Check Task Definition">
+    Verify CPU/memory limits are sufficient:
+    - Minimum: 2048 CPU (2 vCPU), 4096 MB
+    - Recommended: 4096 CPU (4 vCPU), 8192 MB
+  </Step>
+</Steps>
+
+### EKS Pod CrashLoopBackOff
+
+**Problem:** Kubernetes pods keep restarting.
+
+**Solution:**
+
+```bash
+# Check pod status
+kubectl get pods -n suna
+
+# View pod logs
+kubectl logs <pod-name> -n suna
+
+# View previous crash logs
+kubectl logs <pod-name> -n suna --previous
+
+# Describe pod for events
+kubectl describe pod <pod-name> -n suna
+```
+
+Common causes:
+- Missing environment variables (sync secrets)
+- Insufficient memory (OOMKilled)
+- Database connection issues
+- Bad container image (rollback)
+
+**Fix:**
+```bash
+# Sync secrets
+kubectl create secret generic suna-env -n suna \
+  --from-env-file=secrets.env --dry-run=client -o yaml | kubectl apply -f -
+
+# Rollback bad deployment
+kubectl rollout undo deployment/suna-api -n suna
+
+# Restart pods
+kubectl rollout restart deployment/suna-api -n suna
+```
+
+### Load Balancer Health Check Fails
+
+**Problem:** ALB shows unhealthy targets.
+
+**Solution:**
+
+<Steps>
+  <Step title="Test Health Endpoint">
+    ```bash
+    # From inside pod/container
+    curl http://localhost:8000/v1/health-docker
+    
+    # Should return: {"status":"healthy"}
+    ```
+  </Step>
+  
+  <Step title="Check Health Check Config">
+    ALB Target Group settings:
+    - Path: `/v1/health-docker`
+    - Port: 8000
+    - Interval: 30 seconds
+    - Timeout: 5 seconds
+    - Healthy threshold: 2
+    - Unhealthy threshold: 3
+  </Step>
+  
+  <Step title="Verify Security Groups">
+    Ensure ALB can reach backend on port 8000:
+    - Backend security group allows inbound on 8000 from ALB
+    - ALB security group allows outbound to backend
+  </Step>
+</Steps>
+
+## Performance Issues
+
+### Slow Response Times
+
+**Problem:** Agents take a long time to respond.
+
+**Causes & Solutions:**
+
+<AccordionGroup>
+  <Accordion title="Cold Start Delays">
+    First request after deployment is slower.
+    
+    **Solution:** Increase minimum replicas or keep services warm with health checks.
+  </Accordion>
+  
+  <Accordion title="LLM Provider Latency">
+    Some LLM providers are slower than others.
+    
+    **Solution:**
+    - Use faster models (e.g., Claude Haiku, GPT-4o-mini)
+    - Switch to providers with better latency in your region
+    - Enable streaming for real-time responses
+  </Accordion>
+  
+  <Accordion title="Database Queries">
+    Slow Supabase queries.
+    
+    **Solution:**
+    - Check Supabase performance metrics
+    - Add database indexes
+    - Upgrade Supabase plan for more resources
+  </Accordion>
+  
+  <Accordion title="Insufficient Resources">
+    Backend running out of CPU/memory.
+    
+    **Solution:**
+    ```bash
+    # Check resource usage
+    docker stats  # Docker
+    kubectl top pods -n suna  # Kubernetes
+    
+    # Scale up
+    kubectl scale deployment/suna-api -n suna --replicas=6
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### High Memory Usage
+
+**Problem:** Backend memory usage grows over time.
+
+**Solution:**
+
+<Steps>
+  <Step title="Monitor Memory">
+    ```bash
+    # Docker
+    docker stats
+    
+    # Kubernetes
+    kubectl top pods -n suna
+    ```
+  </Step>
+  
+  <Step title="Enable Auto-Scaling">
+    For Kubernetes:
+    ```bash
+    # HPA scales based on memory
+    kubectl get hpa -n suna
+    ```
+    
+    For Docker Compose:
+    ```bash
+    # Periodic restart (cron job)
+    0 */6 * * * cd /path/to/suna && docker compose restart backend
+    ```
+  </Step>
+  
+  <Step title="Increase Memory Limits">
+    Temporarily increase limits while investigating:
+    
+    Docker Compose:
+    ```yaml
+    services:
+      backend:
+        deploy:
+          resources:
+            limits:
+              memory: 6G
+    ```
+    
+    Kubernetes:
+    ```yaml
+    resources:
+      limits:
+        memory: 4Gi
+    ```
+  </Step>
+</Steps>
+
+## Data Issues
+
+### Lost Conversations
+
+**Problem:** Chat history disappears.
+
+**Solution:**
+
+Check Supabase connection and data:
+
+```bash
+# Connect to Supabase database
+psql "$DATABASE_URL"
+
+# Check threads table
+SELECT COUNT(*) FROM threads;
+
+# Check messages table
+SELECT COUNT(*) FROM messages;
+```
+
+Common causes:
+- Supabase project paused (free tier inactivity)
+- Database connection issues
+- User authentication issues
+
+### File Upload Failures
+
+**Problem:** Can't upload files to agents.
+
+**Solution:**
+
+<Steps>
+  <Step title="Check Supabase Storage">
+    Supabase Dashboard → Storage → Policies
+    
+    Ensure storage policies allow authenticated uploads.
+  </Step>
+  
+  <Step title="Check File Size Limits">
+    Default limits:
+    - Supabase: 50MB per file
+    - Backend: Configurable in environment
+  </Step>
+  
+  <Step title="Verify CORS Settings">
+    Supabase Dashboard → Storage → Settings
+    
+    Add your frontend URL to allowed origins.
+  </Step>
+</Steps>
+
+## Debugging Tools
+
+### Logs
+
+<Tabs>
+  <Tab title="Docker Compose">
+    ```bash
+    # All services
+    docker compose logs -f
+    
+    # Specific service
+    docker compose logs -f backend
+    docker compose logs -f frontend
+    
+    # Last 100 lines
+    docker compose logs --tail=100 backend
+    ```
+  </Tab>
+  
+  <Tab title="Manual Setup">
+    ```bash
+    # Backend logs
+    tail -f backend.log
+    
+    # Frontend logs
+    tail -f frontend.log
+    
+    # Both
+    tail -f backend.log frontend.log
+    ```
+  </Tab>
+  
+  <Tab title="Kubernetes">
+    ```bash
+    # All pods
+    kubectl logs -l app.kubernetes.io/name=suna-api -n suna -f
+    
+    # Specific pod
+    kubectl logs <pod-name> -n suna -f
+    
+    # Previous crash
+    kubectl logs <pod-name> -n suna --previous
+    ```
+  </Tab>
+</Tabs>
+
+### Health Checks
+
+```bash
+# Backend health
+curl http://localhost:8000/v1/health-docker
+
+# Frontend (should return HTML)
+curl http://localhost:3000
+
+# Redis
+redis-cli ping
+
+# Supabase
+curl https://your-project.supabase.co/rest/v1/
+```
+
+### Database Inspection
+
+```bash
+# Connect to database
+psql "$DATABASE_URL"
+
+# List tables
+\dt
+
+# Check users
+SELECT id, email, created_at FROM auth.users;
+
+# Check agents
+SELECT id, name, created_at FROM agents;
+
+# Check threads
+SELECT id, title, created_at FROM threads ORDER BY created_at DESC LIMIT 10;
+```
+
+## Getting Help
+
+If you're still stuck:
+
+<CardGroup cols={2}>
+  <Card title="Discord Community" icon="discord" href="https://discord.com/invite/RvFhXUdZ9H">
+    Get real-time help from the community
+  </Card>
+  
+  <Card title="GitHub Issues" icon="github" href="https://github.com/kortix-ai/suna/issues">
+    Report bugs and request features
+  </Card>
+  
+  <Card title="Documentation" icon="book">
+    Review setup and configuration guides
+  </Card>
+  
+  <Card title="GitHub Discussions" icon="comments" href="https://github.com/kortix-ai/suna/discussions">
+    Ask questions and share solutions
+  </Card>
+</CardGroup>
+
+## Common Error Messages
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `alg value is not allowed` | JWT secret mismatch | Re-enter exact JWT secret from Supabase |
+| `connection refused` | Service not running | Start services with `python start.py` |
+| `OOMKilled` | Out of memory | Increase memory limits or scale horizontally |
+| `CrashLoopBackOff` | Pod keeps crashing | Check logs with `kubectl logs` |
+| `502 Bad Gateway` | Backend unreachable | Verify backend is running and accessible |
+| `Database connection failed` | Wrong DATABASE_URL | Check connection string format |
+| `API key invalid` | Wrong/expired API key | Update API key in configuration |
+| `Rate limit exceeded` | Too many API calls | Upgrade LLM provider plan or add fallbacks |
+
+<Info>
+For detailed troubleshooting of specific deployment types, see the [EKS Operations Guide](https://github.com/kortix-ai/suna/blob/main/infra/docs/eks-operations-guide.md).
+</Info>

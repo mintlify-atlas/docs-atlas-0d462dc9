@@ -1,0 +1,145 @@
+---
+title: 'Create Thread'
+description: 'Create a new thread with an associated project and sandbox environment'
+---
+
+## Overview
+
+Creates a new thread along with a project and sandbox environment. This endpoint automatically provisions a sandbox with VNC access for development work.
+
+<Note>
+In non-local environments, this endpoint enforces thread and project limits based on your account's plan.
+</Note>
+
+## Request
+
+<ParamField path="name" type="string" required={false}>
+  The name for the project. Defaults to "New Project" if not provided.
+</ParamField>
+
+### Authentication
+
+Requires a valid JWT token. The endpoint uses `verify_and_get_user_id_from_jwt` to authenticate the request.
+
+```bash cURL
+curl -X POST https://api.kortix.ai/threads \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "name=My Project"
+```
+
+```python Python SDK
+from kortix import Kortix
+
+client = Kortix(api_key="YOUR_API_KEY")
+
+thread = client.threads.create(
+    name="My Project"
+)
+
+print(f"Thread ID: {thread.thread_id}")
+print(f"Project ID: {thread.project_id}")
+```
+
+```javascript JavaScript SDK
+import { Kortix } from 'kortix';
+
+const client = new Kortix({
+  apiKey: 'YOUR_API_KEY'
+});
+
+const thread = await client.threads.create({
+  name: 'My Project'
+});
+
+console.log(`Thread ID: ${thread.thread_id}`);
+console.log(`Project ID: ${thread.project_id}`);
+```
+
+## Response
+
+<ResponseField name="thread_id" type="string" required>
+  The unique identifier for the created thread
+</ResponseField>
+
+<ResponseField name="project_id" type="string" required>
+  The unique identifier for the created project
+</ResponseField>
+
+### Response Example
+
+```json
+{
+  "thread_id": "550e8400-e29b-41d4-a716-446655440000",
+  "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+}
+```
+
+## Implementation Details
+
+When a thread is created, the following happens automatically:
+
+1. **Limit Checks** - Validates thread and project limits against your account plan (skipped in local environments)
+2. **Project Creation** - Creates a new project with the specified name
+3. **Thread Creation** - Creates a thread named "New Chat" within the project
+4. **Sandbox Provisioning** - Automatically creates a sandbox environment with:
+   - VNC access on port 6080
+   - Web preview on port 8080
+   - Unique authentication token
+5. **Resource Linking** - Links the sandbox as a resource to the project
+6. **Cache Updates** - Updates counters and metadata caches
+
+<Warning>
+If sandbox creation fails, the project and any created resources are automatically cleaned up to prevent orphaned records.
+</Warning>
+
+## Error Responses
+
+<Expandable title="402 - Payment Required">
+
+Returned when thread or project limits are exceeded:
+
+```json
+{
+  "detail": {
+    "message": "Thread limit exceeded",
+    "current_count": 10,
+    "limit": 10,
+    "error_code": "THREAD_LIMIT_EXCEEDED"
+  }
+}
+```
+
+or
+
+```json
+{
+  "detail": {
+    "message": "Project limit exceeded",
+    "current_count": 5,
+    "limit": 5,
+    "error_code": "PROJECT_LIMIT_EXCEEDED"
+  }
+}
+```
+
+</Expandable>
+
+<Expandable title="500 - Internal Server Error">
+
+```json
+{
+  "detail": "Failed to create thread: <error message>"
+}
+```
+
+Possible causes:
+- Sandbox provisioning failed
+- Database operation failed
+- Resource linking failed
+
+</Expandable>
+
+## Source Reference
+
+Implementation: `/workspace/source/backend/core/threads/api.py:524`

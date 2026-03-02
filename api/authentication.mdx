@@ -1,0 +1,431 @@
+---
+title: 'Authentication'
+description: 'Authenticate API requests using API keys or JWT tokens'
+---
+
+## Overview
+
+Kortix API supports two authentication methods:
+
+1. **API Keys**: For server-to-server communication and long-lived integrations
+2. **JWT Tokens**: For user sessions and web applications
+
+Both methods provide secure, account-scoped access to resources.
+
+## API Key Authentication
+
+API keys consist of a public key (`pk_`) and secret key (`sk_`) pair. They are ideal for:
+
+- Server-to-server integrations
+- CI/CD pipelines
+- Long-running automation
+- Microservices
+
+### API Key Format
+
+```bash
+pk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:sk_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+```
+
+<ParamField path="public_key" type="string" required>
+  Public key starting with `pk_` (32 random characters)
+</ParamField>
+
+<ParamField path="secret_key" type="string" required>
+  Secret key starting with `sk_` (32 random characters)
+</ParamField>
+
+Source: `core/services/api_keys.py:115-133`
+
+### Using API Keys
+
+Include the API key in the `X-API-Key` header:
+
+<CodeGroup>
+```bash cURL
+curl https://api.kortix.com/v1/agents \
+  -H "X-API-Key: pk_abc123:sk_xyz789"
+```
+
+```python Python
+import requests
+
+headers = {
+    "X-API-Key": "pk_abc123:sk_xyz789"
+}
+
+response = requests.get(
+    "https://api.kortix.com/v1/agents",
+    headers=headers
+)
+```
+
+```javascript JavaScript
+fetch('https://api.kortix.com/v1/agents', {
+  headers: {
+    'X-API-Key': 'pk_abc123:sk_xyz789'
+  }
+});
+```
+</CodeGroup>
+
+### API Key Validation
+
+The validation process includes:
+
+1. **Format Check**: Validates `pk_:sk_` format
+2. **Database Lookup**: Finds key by public_key
+3. **Hash Verification**: HMAC-SHA256 comparison (constant-time)
+4. **Status Check**: Ensures key is `active`
+5. **Expiration Check**: Validates `expires_at` timestamp
+
+Source: `core/services/api_keys.py:335-456`
+
+### Security Features
+
+#### HMAC-SHA256 Hashing
+
+Secret keys are hashed using HMAC-SHA256 for fast, secure verification:
+
+```python
+# 100x faster than bcrypt
+def _hash_secret_key(self, secret_key: str) -> str:
+    secret = self._get_secret_key().encode("utf-8")
+    return hmac.new(
+        secret, 
+        secret_key.encode("utf-8"), 
+        hashlib.sha256
+    ).hexdigest()
+```
+
+Source: `core/services/api_keys.py:139-150`
+
+#### Constant-Time Comparison
+
+Prevents timing attacks:
+
+```python
+def _verify_secret_key(self, secret_key: str, hashed_key: str) -> bool:
+    expected_hash = self._hash_secret_key(secret_key)
+    return hmac.compare_digest(expected_hash, hashed_key)
+```
+
+Source: `core/services/api_keys.py:152-167`
+
+#### Redis Caching
+
+Validation results are cached for 2 minutes:
+
+```python
+cache_key = f"api_key:{public_key}:{hash[:8]}"
+await redis.setex(cache_key, 120, json.dumps(cache_data))
+```
+
+Source: `core/services/api_keys.py:356-379`, `458-473`
+
+### API Key Lifecycle
+
+<Steps>
+  <Step title="Creation">
+    Generate a new API key pair with optional expiration
+    
+    ```bash
+    POST /v1/api-keys
+    ```
+    
+    ```json
+    {
+      "title": "Production Integration",
+      "description": "API key for production service",
+      "expires_in_days": 365
+    }
+    ```
+  </Step>
+  
+  <Step title="Storage">
+    The secret key is hashed and stored securely. **You will only see the plain secret key once during creation.**
+  </Step>
+  
+  <Step title="Usage">
+    Use the key pair in the `X-API-Key` header for all requests
+  </Step>
+  
+  <Step title="Rotation">
+    Revoke old keys and create new ones periodically
+    
+    ```bash
+    POST /v1/api-keys/{key_id}/revoke
+    ```
+  </Step>
+</Steps>
+
+### API Key Status
+
+<ParamField path="active" type="status">
+  Key is valid and can be used
+</ParamField>
+
+<ParamField path="revoked" type="status">
+  Key has been manually revoked
+</ParamField>
+
+<ParamField path="expired" type="status">
+  Key has passed its expiration date
+</ParamField>
+
+Source: `core/services/api_keys.py:29-32`
+
+## JWT Token Authentication
+
+JWT (JSON Web Token) authentication is used for:
+
+- Web application user sessions
+- Mobile app authentication
+- Temporary access grants
+- Server-Sent Events (SSE) streaming
+
+### JWT Algorithms
+
+Kortix supports two JWT signing algorithms:
+
+#### ES256 (Recommended)
+
+Elliptic Curve Digital Signature Algorithm with P-256 curve:
+
+- Uses Supabase JWKS (JSON Web Key Set) endpoint
+- Fetches public keys dynamically
+- Caches JWKS for 1 hour
+- More secure than HS256
+
+Source: `core/utils/auth_utils.py:25-126`
+
+```python
+# JWKS endpoint
+jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+```
+
+Source: `core/utils/auth_utils.py:53`
+
+#### HS256 (Legacy)
+
+HMAC-SHA256 symmetric signing:
+
+- Uses shared secret (`SUPABASE_JWT_SECRET`)
+- Faster verification
+- Supported for backwards compatibility
+
+Source: `core/utils/auth_utils.py:217-258`
+
+### Using JWT Tokens
+
+Include the JWT token in the `Authorization` header:
+
+<CodeGroup>
+```bash cURL
+curl https://api.kortix.com/v1/agents \
+  -H "Authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImFiYzEyMyJ9..."
+```
+
+```python Python
+import requests
+
+headers = {
+    "Authorization": "Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImFiYzEyMyJ9..."
+}
+
+response = requests.get(
+    "https://api.kortix.com/v1/agents",
+    headers=headers
+)
+```
+
+```javascript JavaScript
+const token = 'eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImFiYzEyMyJ9...';
+
+fetch('https://api.kortix.com/v1/agents', {
+  headers: {
+    'Authorization': `Bearer ${token}`
+  }
+});
+```
+</CodeGroup>
+
+### JWT Verification Process
+
+<Steps>
+  <Step title="Decode Header">
+    Extract algorithm (`alg`) and key ID (`kid`) without verification
+    
+    ```python
+    unverified_header = jwt.get_unverified_header(token)
+    algorithm = unverified_header.get('alg')  # ES256 or HS256
+    kid = unverified_header.get('kid')  # Key ID for ES256
+    ```
+    
+    Source: `core/utils/auth_utils.py:159-162`
+  </Step>
+  
+  <Step title="Fetch Public Key" condition="ES256 only">
+    For ES256 tokens, fetch JWKS and extract public key
+    
+    ```python
+    jwks = await _fetch_jwks()
+    public_key = _get_public_key_from_jwks(jwks, kid)
+    ```
+    
+    Source: `core/utils/auth_utils.py:174-175`
+  </Step>
+  
+  <Step title="Verify Signature">
+    Validate token signature using public key (ES256) or secret (HS256)
+    
+    ```python
+    payload = jwt.decode(
+        token,
+        public_key,  # or jwt_secret for HS256
+        algorithms=["ES256"],  # or ["HS256"]
+        options={
+            "verify_signature": True,
+            "verify_exp": True,
+            "verify_aud": False,
+            "verify_iss": False,
+        }
+    )
+    ```
+    
+    Source: `core/utils/auth_utils.py:177-187`
+  </Step>
+  
+  <Step title="Extract User ID">
+    Get user ID from the `sub` (subject) claim
+    
+    ```python
+    user_id = payload.get('sub')
+    ```
+    
+    Source: `core/utils/auth_utils.py:468`
+  </Step>
+</Steps>
+
+### Streaming Authentication
+
+For Server-Sent Events (SSE), which cannot set custom headers:
+
+```bash
+curl "https://api.kortix.com/v1/agent-runs/{run_id}/stream?token=eyJhbGc..."
+```
+
+<ParamField query="token" type="string">
+  JWT token passed as query parameter for EventSource compatibility
+</ParamField>
+
+Source: `core/utils/auth_utils.py:502-549`
+
+## Authentication Flow
+
+The API checks both authentication methods in order:
+
+```mermaid
+graph TD
+    A[Request] --> B{Has X-API-Key?}
+    B -->|Yes| C[Validate API Key]
+    B -->|No| D{Has Authorization?}
+    C -->|Valid| E[Get User from Account]
+    C -->|Invalid| F[401 Unauthorized]
+    D -->|Yes| G[Verify JWT]
+    D -->|No| F
+    G -->|Valid| H[Extract User ID]
+    G -->|Invalid| F
+    E --> I[Proceed with Request]
+    H --> I
+```
+
+Source: `core/utils/auth_utils.py:396-492`
+
+## Account-Based Access Control
+
+All resources in Kortix are scoped to accounts:
+
+1. **API Keys** → Linked to an account_id
+2. **JWT Tokens** → User is primary owner of account
+3. **Resources** → Owned by account (threads, agents, etc.)
+
+### Account Lookup
+
+API keys resolve to users via account ownership:
+
+```python
+# Cached for 5 minutes
+cache_key = f"account_user:{account_id}"
+user_id = await redis.get(cache_key)
+
+if not user_id:
+    user_result = await client.schema('basejump').table('accounts').select(
+        'primary_owner_user_id'
+    ).eq('id', account_id).limit(1).execute()
+```
+
+Source: `core/utils/auth_utils.py:361-394`
+
+## Admin Authentication
+
+Admin endpoints require a special admin API key:
+
+```bash
+curl https://api.kortix.com/v1/admin/users \
+  -H "X-Admin-Api-Key: your_admin_key"
+```
+
+<Warning>
+  Admin API keys grant full system access. Store them securely and rotate regularly.
+</Warning>
+
+Source: `core/utils/auth_utils.py:128-148`
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="API Keys">
+    - Store API keys in environment variables, never in code
+    - Use different keys for development, staging, and production
+    - Set expiration dates for keys (max 365 days)
+    - Rotate keys regularly
+    - Revoke compromised keys immediately
+    - Monitor `last_used_at` for suspicious activity
+  </Accordion>
+  
+  <Accordion title="JWT Tokens">
+    - Always verify signatures (never use unverified tokens)
+    - Check expiration timestamps
+    - Use short-lived tokens for sensitive operations
+    - Refresh tokens before expiration
+    - Store tokens securely (httpOnly cookies for web apps)
+  </Accordion>
+  
+  <Accordion title="Security">
+    - Use HTTPS in production
+    - Implement rate limiting on your side
+    - Log authentication failures
+    - Monitor for brute force attempts
+    - Never expose secret keys in client-side code
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling
+
+See the [Errors](/api/errors) page for authentication error codes:
+
+- `401 Unauthorized`: Invalid or missing credentials
+- `403 Forbidden`: Valid credentials but insufficient permissions
+- `404 Not Found`: API key or user not found
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Error Reference" icon="triangle-exclamation" href="/api/errors">
+    Learn about error codes and handling
+  </Card>
+  <Card title="API Introduction" icon="book" href="/api/introduction">
+    Return to API overview
+  </Card>
+</CardGroup>

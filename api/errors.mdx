@@ -1,0 +1,682 @@
+---
+title: 'Error Handling'
+description: 'Understanding API error responses and status codes'
+---
+
+## Error Response Format
+
+All API errors follow a consistent JSON structure:
+
+```json
+{
+  "detail": "Error message describing what went wrong"
+}
+```
+
+For some errors, additional context is provided:
+
+```json
+{
+  "detail": {
+    "status": "shutting_down",
+    "timestamp": "2026-03-02T10:30:00.000Z",
+    "instance_id": "i-abc123xyz"
+  }
+}
+```
+
+## HTTP Status Codes
+
+The Kortix API uses standard HTTP status codes to indicate success or failure.
+
+### 2xx Success
+
+<ResponseField name="200 OK" type="success">
+  Request succeeded
+</ResponseField>
+
+<ResponseField name="201 Created" type="success">
+  Resource created successfully
+</ResponseField>
+
+### 4xx Client Errors
+
+<ResponseField name="400 Bad Request" type="error">
+  Invalid request format or parameters
+</ResponseField>
+
+<ResponseField name="401 Unauthorized" type="error">
+  Missing or invalid authentication credentials
+</ResponseField>
+
+<ResponseField name="403 Forbidden" type="error">
+  Authenticated but lacking required permissions
+</ResponseField>
+
+<ResponseField name="404 Not Found" type="error">
+  Requested resource does not exist
+</ResponseField>
+
+<ResponseField name="429 Too Many Requests" type="error">
+  Rate limit exceeded (currently 25 concurrent IPs per instance)
+</ResponseField>
+
+### 5xx Server Errors
+
+<ResponseField name="500 Internal Server Error" type="error">
+  Unexpected server error occurred
+</ResponseField>
+
+<ResponseField name="503 Service Unavailable" type="error">
+  Service temporarily unavailable (maintenance, shutdown, or overload)
+</ResponseField>
+
+## Authentication Errors
+
+### 401 Unauthorized
+
+Returned when authentication credentials are missing, invalid, or expired.
+
+<CodeGroup>
+```json Missing Credentials
+{
+  "detail": "No valid authentication credentials found"
+}
+```
+
+```json Invalid API Key Format
+{
+  "detail": "Invalid API key format. Expected format: pk_xxx:sk_xxx"
+}
+```
+
+```json Invalid API Key
+{
+  "detail": "Invalid API key"
+}
+```
+
+```json Expired Token
+{
+  "detail": "Token has expired"
+}
+```
+
+```json Invalid Token Signature
+{
+  "detail": "Invalid token signature"
+}
+```
+
+```json Invalid Token
+{
+  "detail": "Invalid token"
+}
+```
+</CodeGroup>
+
+Source: `core/utils/auth_utils.py:136-492`
+
+#### Common Causes
+
+1. **No Authentication Header**: Missing both `X-API-Key` and `Authorization` headers
+2. **Wrong API Key Format**: API key not in `pk_xxx:sk_xxx` format
+3. **Invalid Credentials**: Wrong API key or JWT token
+4. **Expired Token**: JWT token past its `exp` timestamp
+5. **Token Forgery**: Signature verification failed (possible attack)
+
+#### Resolution
+
+<CodeGroup>
+```bash Valid API Key
+curl https://api.kortix.com/v1/agents \
+  -H "X-API-Key: pk_abc123:sk_xyz789"
+```
+
+```bash Valid JWT
+curl https://api.kortix.com/v1/agents \
+  -H "Authorization: Bearer eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+</CodeGroup>
+
+### 403 Forbidden
+
+Returned when credentials are valid but lack required permissions.
+
+<CodeGroup>
+```json Thread Access Denied
+{
+  "detail": "Not authorized to access this thread"
+}
+```
+
+```json Thread Write Access Denied
+{
+  "detail": "Not authorized to modify this thread"
+}
+```
+
+```json Admin Key Required
+{
+  "detail": "Invalid admin API key"
+}
+```
+
+```json Private Project
+{
+  "detail": "Not authorized to access this project's sandbox"
+}
+```
+</CodeGroup>
+
+Source: `core/utils/auth_utils.py:143-146`, `651-670`, `963`
+
+#### Common Causes
+
+1. **Wrong Account**: Resource belongs to a different account
+2. **Team Access**: Not a member of the resource's team
+3. **Public vs Private**: Attempting write access on read-only public resource
+4. **Admin Only**: Endpoint requires admin privileges
+
+### 404 Not Found
+
+Returned when a resource doesn't exist or user lacks access to view it.
+
+<CodeGroup>
+```json Resource Not Found
+{
+  "detail": "Worker run not found"
+}
+```
+
+```json Thread Not Found
+{
+  "detail": "Thread not found"
+}
+```
+
+```json API Key Not Found
+{
+  "detail": "API key not found"
+}
+```
+
+```json Sandbox Not Found
+{
+  "detail": "Sandbox not found - no resource exists for this sandbox"
+}
+```
+</CodeGroup>
+
+Source: `core/utils/auth_utils.py:319`, `636`, `895`
+
+<Info>
+  For security, 404 responses don't reveal whether the resource exists but user lacks access, or doesn't exist at all.
+</Info>
+
+## Server Configuration Errors
+
+### 500 Internal Server Error
+
+Returned when server configuration is incorrect or an unexpected error occurs.
+
+<CodeGroup>
+```json Missing JWT Secret
+{
+  "detail": "Server authentication configuration error"
+}
+```
+
+```json ES256 Sync Error
+{
+  "detail": "ES256 tokens require async verification. Use async endpoint."
+}
+```
+
+```json Database Error
+{
+  "detail": "Failed to verify thread access: ..."
+}
+```
+</CodeGroup>
+
+Source: `core/utils/auth_utils.py:130-132`, `222-225`, `288-291`, `680-684`
+
+### 503 Service Unavailable
+
+Returned when the service is temporarily unavailable.
+
+<CodeGroup>
+```json Graceful Shutdown
+{
+  "detail": {
+    "status": "shutting_down",
+    "timestamp": "2026-03-02T10:30:00.000Z",
+    "instance_id": "i-abc123xyz"
+  }
+}
+```
+
+```json Database Shutdown
+{
+  "detail": "Server is shutting down"
+}
+```
+
+```json Redis Unhealthy
+{
+  "status": "unhealthy",
+  "error": "Connection timeout",
+  "instance_id": "i-abc123xyz",
+  "timestamp": "2026-03-02T10:30:00.000Z"
+}
+```
+</CodeGroup>
+
+Source: `api.py:450-459`, `core/utils/auth_utils.py:548-549`, `675-679`
+
+#### Common Causes
+
+1. **Deployment**: Kubernetes rolling update in progress
+2. **Maintenance**: Scheduled maintenance window
+3. **Database Issues**: Connection pool exhausted or shutdown
+4. **Redis Issues**: Cache unavailable (degraded mode)
+
+#### Retry Strategy
+
+For 503 errors, implement exponential backoff:
+
+```python
+import time
+import requests
+
+def retry_request(url, max_retries=3, backoff=2):
+    for attempt in range(max_retries):
+        response = requests.get(url)
+        if response.status_code == 503:
+            wait_time = backoff ** attempt
+            time.sleep(wait_time)
+            continue
+        return response
+    raise Exception("Max retries exceeded")
+```
+
+## API-Specific Errors
+
+### API Key Errors
+
+<CodeGroup>
+```json Invalid Format
+{
+  "detail": "Invalid API key format. Expected format: pk_xxx:sk_xxx"
+}
+```
+
+```json Key Not Found
+{
+  "detail": "Invalid API key"
+}
+```
+
+```json Key Expired
+{
+  "detail": "Invalid API key"  // Generic message prevents enumeration
+}
+```
+
+```json Key Revoked
+{
+  "detail": "Invalid API key"  // Generic message prevents enumeration
+}
+```
+
+```json Wrong Secret
+{
+  "detail": "Invalid API key"  // Generic message prevents enumeration
+}
+```
+</CodeGroup>
+
+Source: `core/services/api_keys.py:335-456`
+
+<Warning>
+  API key validation errors return generic messages to prevent enumeration attacks. Check server logs for detailed error information.
+</Warning>
+
+### JWT Token Errors
+
+<CodeGroup>
+```json Missing Bearer Prefix
+{
+  "detail": "No valid authentication credentials found"
+}
+```
+
+```json Expired Signature
+{
+  "detail": "Token has expired"
+}
+```
+
+```json Invalid Signature (ES256)
+{
+  "detail": "Invalid token signature"
+}
+```
+
+```json Invalid Signature (HS256)
+{
+  "detail": "Invalid token signature"
+}
+```
+
+```json Unsupported Algorithm
+{
+  "detail": "Token uses unsupported algorithm: RS256. Supported: HS256, ES256."
+}
+```
+
+```json JWKS Error
+{
+  "detail": "Invalid token signature"
+}
+```
+</CodeGroup>
+
+Source: `core/utils/auth_utils.py:151-266`
+
+### Thread Access Errors
+
+<CodeGroup>
+```json Thread Not Found
+{
+  "detail": "Thread not found"
+}
+```
+
+```json Authentication Required (Private)
+{
+  "detail": "Authentication required for private threads"
+}
+```
+
+```json Authentication Required (Write)
+{
+  "detail": "Authentication required to modify this thread"
+}
+```
+
+```json No Access
+{
+  "detail": "Not authorized to access this thread"
+}
+```
+
+```json No Write Access
+{
+  "detail": "Not authorized to modify this thread"
+}
+```
+</CodeGroup>
+
+Source: `core/utils/auth_utils.py:591-684`
+
+### Sandbox Access Errors
+
+<CodeGroup>
+```json Sandbox Not Found
+{
+  "detail": "Sandbox not found - no resource exists for this sandbox"
+}
+```
+
+```json No Project
+{
+  "detail": "Sandbox not found - no project uses this sandbox"
+}
+```
+
+```json Private Project
+{
+  "detail": "Not authorized to access this project's sandbox"
+}
+```
+
+```json Auth Required
+{
+  "detail": "Authentication required for this private project"
+}
+```
+</CodeGroup>
+
+Source: `core/utils/auth_utils.py:845-1112`
+
+## Validation Errors
+
+### 400 Bad Request
+
+Returned when request data is malformed or violates validation rules.
+
+<CodeGroup>
+```json Missing Required Field
+{
+  "detail": [
+    {
+      "loc": ["body", "title"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    }
+  ]
+}
+```
+
+```json Invalid Type
+{
+  "detail": [
+    {
+      "loc": ["body", "expires_in_days"],
+      "msg": "value is not a valid integer",
+      "type": "type_error.integer"
+    }
+  ]
+}
+```
+
+```json Validation Failed
+{
+  "detail": [
+    {
+      "loc": ["body", "title"],
+      "msg": "ensure this value has at most 255 characters",
+      "type": "value_error.any_str.max_length",
+      "ctx": {"limit_value": 255}
+    }
+  ]
+}
+```
+</CodeGroup>
+
+FastAPI automatically validates Pydantic models and returns detailed error information.
+
+## Debugging Errors
+
+### Enable Detailed Logging
+
+In development, set log level to DEBUG:
+
+```bash
+export LOG_LEVEL=DEBUG
+```
+
+### Health Check Endpoints
+
+Use health endpoints to diagnose issues:
+
+<CodeGroup>
+```bash Instance Health
+curl https://api.kortix.com/v1/health
+```
+
+```bash Docker Health
+curl https://api.kortix.com/v1/health-docker
+```
+
+```bash Redis Health
+curl https://api.kortix.com/v1/debug/redis
+```
+
+```bash System Metrics
+curl https://api.kortix.com/v1/metrics
+```
+
+```bash Debug Info
+curl https://api.kortix.com/v1/debug
+```
+</CodeGroup>
+
+Source: `api.py:444-546`
+
+### Debug Response Example
+
+```json
+{
+  "instance_id": "i-abc123xyz",
+  "active_runs_on_instance": 5,
+  "is_shutting_down": false,
+  "timestamp": "2026-03-02T10:30:00.000Z"
+}
+```
+
+Source: `api.py:498-508`
+
+### Redis Health Response
+
+```json
+{
+  "status": "healthy",
+  "latency_ms": 1.23,
+  "pool": {
+    "size": 10,
+    "in_use": 3
+  },
+  "timeouts": {
+    "default": 5000,
+    "streaming": 30000
+  },
+  "instance_id": "i-abc123xyz",
+  "timestamp": "2026-03-02T10:30:00.000Z"
+}
+```
+
+Source: `api.py:510-545`
+
+### Common Debug Scenarios
+
+<AccordionGroup>
+  <Accordion title="Authentication Failing">
+    1. Check API key format: `pk_xxx:sk_xxx`
+    2. Verify key hasn't expired or been revoked
+    3. Confirm JWT token hasn't expired
+    4. Check JWT algorithm (ES256 or HS256)
+    5. Ensure SUPABASE_JWT_SECRET is configured (HS256)
+    6. Verify JWKS endpoint is reachable (ES256)
+  </Accordion>
+  
+  <Accordion title="Access Denied (403)">
+    1. Verify resource belongs to your account
+    2. Check if you're a team member
+    3. Confirm resource isn't private
+    4. Check if write access is required
+    5. Verify admin key for admin endpoints
+  </Accordion>
+  
+  <Accordion title="Resource Not Found (404)">
+    1. Confirm resource ID is correct
+    2. Check if resource was deleted
+    3. Verify you have access (404 may hide 403)
+    4. Ensure correct account/project scope
+  </Accordion>
+  
+  <Accordion title="Server Errors (5xx)">
+    1. Check health endpoints
+    2. Verify database connectivity
+    3. Check Redis status
+    4. Look for deployment in progress
+    5. Review server logs (if accessible)
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling Best Practices
+
+<Steps>
+  <Step title="Check Status Code">
+    Always check the HTTP status code first to categorize the error
+  </Step>
+  
+  <Step title="Parse Error Detail">
+    Extract the `detail` field from the response body
+  </Step>
+  
+  <Step title="Implement Retry Logic">
+    For 5xx errors, retry with exponential backoff
+  </Step>
+  
+  <Step title="Log for Debugging">
+    Log all errors with request context for troubleshooting
+  </Step>
+  
+  <Step title="User-Friendly Messages">
+    Convert technical errors to user-friendly messages in your UI
+  </Step>
+</Steps>
+
+### Example Error Handler
+
+```python
+import requests
+import time
+
+def handle_api_error(response):
+    """Handle API errors with proper retry logic"""
+    
+    if response.status_code == 401:
+        # Authentication error - refresh token or re-authenticate
+        raise AuthenticationError("Please log in again")
+    
+    elif response.status_code == 403:
+        # Permission error - show access denied message
+        raise PermissionError("You don't have access to this resource")
+    
+    elif response.status_code == 404:
+        # Not found - resource may not exist or no access
+        raise NotFoundError("Resource not found")
+    
+    elif response.status_code == 429:
+        # Rate limit - wait and retry
+        retry_after = int(response.headers.get('Retry-After', 60))
+        time.sleep(retry_after)
+        # Retry request...
+    
+    elif response.status_code == 503:
+        # Service unavailable - retry with backoff
+        for attempt in range(3):
+            time.sleep(2 ** attempt)
+            # Retry request...
+    
+    elif response.status_code >= 500:
+        # Server error - log and show generic message
+        error_detail = response.json().get('detail', 'Unknown error')
+        logger.error(f"Server error: {error_detail}")
+        raise ServerError("Something went wrong. Please try again later.")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn about authentication methods
+  </Card>
+  <Card title="API Introduction" icon="book" href="/api/introduction">
+    Return to API overview
+  </Card>
+</CardGroup>

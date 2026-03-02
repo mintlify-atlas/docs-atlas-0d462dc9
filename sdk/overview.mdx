@@ -1,0 +1,203 @@
+---
+title: SDK Overview
+description: Introduction to the Kortix Python SDK for creating and managing AI Workers
+---
+
+<Warning>
+  **This SDK is currently in early development and is NOT ready for production use.**
+  
+  The API is subject to breaking changes, features may be incomplete, and documentation may be outdated. Use at your own risk.
+</Warning>
+
+## Introduction
+
+The Kortix Python SDK enables you to create, manage, and interact with AI Workers programmatically. Built with modern async/await patterns, the SDK provides a clean and intuitive interface for building AI-powered applications.
+
+## Key Features
+
+- **Async/Await Support**: Built from the ground up with asyncio for efficient concurrent operations
+- **MCP Integration**: Connect custom MCP (Model Context Protocol) tools to your agents
+- **AgentPress Tools**: Access built-in tools for files, shell, browser, web search, and more
+- **Thread Management**: Create and manage conversation threads
+- **Streaming Responses**: Stream agent responses in real-time
+- **Type Safety**: Fully typed with dataclasses and type hints
+
+## Installation
+
+<Tabs>
+  <Tab title="pip">
+    Install directly from the GitHub repository:
+    
+    ```bash
+    pip install "kortix @ git+https://github.com/kortix-ai/suna.git@main#subdirectory=sdk"
+    ```
+  </Tab>
+  
+  <Tab title="uv">
+    Using [uv](https://github.com/astral-sh/uv) package manager:
+    
+    ```bash
+    uv add "kortix @ git+https://github.com/kortix-ai/suna.git@main#subdirectory=sdk"
+    ```
+  </Tab>
+</Tabs>
+
+## Requirements
+
+- Python 3.11 or higher
+- Dependencies:
+  - `asyncio>=3.4.3`
+  - `httpx>=0.28.1`
+  - `fastmcp>=2.10.6`
+
+## Quick Start
+
+Here's a simple example to get you started:
+
+```python
+import asyncio
+from kortix import kortix
+
+async def main():
+    # Initialize the client
+    client = kortix.Kortix(api_key="your-api-key")
+
+    # Create an agent
+    agent = await client.Agent.create(
+        name="My Assistant",
+        system_prompt="You are a helpful AI assistant."
+    )
+
+    # Create a conversation thread
+    thread = await client.Thread.create()
+
+    # Run the agent
+    run = await agent.run("Hello, how are you?", thread)
+
+    # Stream the response
+    stream = await run.get_stream()
+    async for chunk in stream:
+        print(chunk, end="")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## Authentication
+
+Get your API key from the [Kortix Settings](https://www.kortix.com/settings/api-keys).
+
+You can pass your API key directly when initializing the client:
+
+```python
+client = kortix.Kortix(api_key="pk_xxx:sk_xxx")
+```
+
+Or use environment variables:
+
+```python
+import os
+
+client = kortix.Kortix(
+    api_key=os.getenv("KORTIX_API_KEY"),
+    api_url="https://api.kortix.com/v1"  # Optional, defaults to production
+)
+```
+
+## Core Concepts
+
+### Agents
+
+Agents are AI workers that can use tools to accomplish tasks. Each agent has:
+
+- **Name**: A friendly identifier
+- **System Prompt**: Instructions that define the agent's behavior
+- **Tools**: MCP tools and AgentPress tools the agent can use
+- **Model**: The underlying AI model (defaults to Claude Sonnet 4)
+
+### Threads
+
+Threads represent conversation contexts. They:
+
+- Store message history
+- Track agent runs
+- Can be reused across multiple agent interactions
+- Maintain conversation state
+
+### Agent Runs
+
+When you execute an agent on a thread, you create an agent run. Runs:
+
+- Execute the agent with the current thread context
+- Can be streamed for real-time responses
+- Track execution status and errors
+- Return structured results
+
+### Tools
+
+The SDK supports two types of tools:
+
+1. **MCPTools**: Custom tools from MCP servers (HTTP or SSE)
+2. **AgentPressTools**: Built-in tools for common operations
+
+## Basic Workflow
+
+1. **Initialize the client** with your API key
+2. **Create an agent** with desired configuration
+3. **Create a thread** for the conversation
+4. **Run the agent** with a prompt
+5. **Stream or retrieve** the response
+
+```python
+async def workflow_example():
+    # Step 1: Initialize
+    client = kortix.Kortix(api_key="your-api-key")
+    
+    # Step 2: Create agent
+    agent = await client.Agent.create(
+        name="Code Helper",
+        system_prompt="You help with coding questions."
+    )
+    
+    # Step 3: Create thread
+    thread = await client.Thread.create()
+    
+    # Step 4: Run agent
+    run = await agent.run("Explain async/await in Python", thread)
+    
+    # Step 5: Get response
+    stream = await run.get_stream()
+    async for chunk in stream:
+        print(chunk, end="")
+```
+
+## Error Handling
+
+The SDK uses standard Python exceptions:
+
+```python
+import httpx
+
+try:
+    agent = await client.Agent.create(
+        name="Test Agent",
+        system_prompt="Test"
+    )
+except httpx.HTTPStatusError as e:
+    print(f"API error: {e}")
+except ValueError as e:
+    print(f"Invalid value: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Python SDK Reference" icon="code" href="/sdk/python">
+    Complete reference for all SDK classes and methods
+  </Card>
+  <Card title="Examples" icon="flask" href="/sdk/examples">
+    Real-world examples and use cases
+  </Card>
+</CardGroup>

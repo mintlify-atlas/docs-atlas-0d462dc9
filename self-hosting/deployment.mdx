@@ -1,0 +1,560 @@
+---
+title: 'Deployment'
+description: 'Deploy Kortix to production environments'
+---
+
+## Deployment Options
+
+Kortix supports multiple production deployment strategies:
+
+<CardGroup cols={2}>
+  <Card title="Docker Compose" icon="docker">
+    Simple deployment for single-server setups
+  </Card>
+  
+  <Card title="AWS ECS" icon="aws">
+    Managed container orchestration with auto-scaling
+  </Card>
+  
+  <Card title="AWS EKS" icon="kubernetes">
+    Kubernetes-based deployment for enterprise scale
+  </Card>
+  
+  <Card title="AWS Lightsail" icon="server">
+    Cost-effective cloud hosting for small workloads
+  </Card>
+</CardGroup>
+
+## Docker Compose Deployment
+
+Best for single-server deployments or small teams.
+
+### Server Setup
+
+<Steps>
+  <Step title="Provision Server">
+    Set up a Linux server (Ubuntu 22.04 LTS recommended) with:
+    - 4+ CPU cores
+    - 8GB+ RAM
+    - 50GB+ disk space
+    - Public IP address
+  </Step>
+  
+  <Step title="Install Dependencies">
+    ```bash
+    # Update system
+    sudo apt update && sudo apt upgrade -y
+    
+    # Install Docker
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    
+    # Install Docker Compose
+    sudo apt install docker-compose-plugin -y
+    
+    # Install Git
+    sudo apt install git -y
+    ```
+  </Step>
+  
+  <Step title="Clone Repository">
+    ```bash
+    git clone https://github.com/kortix-ai/suna.git
+    cd suna
+    ```
+  </Step>
+  
+  <Step title="Configure Environment">
+    ```bash
+    # Run setup wizard
+    python setup.py
+    
+    # Update frontend URL for production
+    nano apps/frontend/.env.local
+    ```
+    
+    Set production URLs:
+    ```bash
+    NEXT_PUBLIC_BACKEND_URL=https://api.yourdomain.com/v1
+    NEXT_PUBLIC_URL=https://yourdomain.com
+    NEXT_PUBLIC_ENV_MODE=production
+    ```
+  </Step>
+  
+  <Step title="Start Services">
+    ```bash
+    docker compose up -d
+    ```
+  </Step>
+</Steps>
+
+### SSL/HTTPS Setup
+
+Use Nginx or Caddy as a reverse proxy with automatic HTTPS:
+
+```bash
+# Install Caddy
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install caddy
+
+# Configure Caddy
+sudo nano /etc/caddy/Caddyfile
+```
+
+Caddyfile configuration:
+```
+yourdomain.com {
+    reverse_proxy localhost:3000
+}
+
+api.yourdomain.com {
+    reverse_proxy localhost:8000
+}
+```
+
+Restart Caddy:
+```bash
+sudo systemctl restart caddy
+```
+
+## AWS ECS Deployment
+
+Managed container orchestration with auto-scaling and high availability.
+
+### Architecture
+
+```
+Cloudflare/Route53 → ALB → ECS Service → Fargate Tasks
+                                ↓
+                          Redis + RDS/Supabase
+```
+
+### Prerequisites
+
+- AWS account with appropriate permissions
+- AWS CLI configured
+- Domain name configured in Route53 or Cloudflare
+- Container image pushed to ECR or GHCR
+
+### Infrastructure Setup
+
+Kortix includes Pulumi infrastructure-as-code for ECS:
+
+```bash
+cd infra/environments/prod
+```
+
+<Steps>
+  <Step title="Install Pulumi">
+    ```bash
+    curl -fsSL https://get.pulumi.com | sh
+    ```
+  </Step>
+  
+  <Step title="Configure Secrets">
+    Create AWS Secrets Manager secret with environment variables:
+    
+    ```bash
+    aws secretsmanager create-secret \
+      --name suna-env-prod \
+      --secret-string file://secrets.json
+    ```
+  </Step>
+  
+  <Step title="Configure Pulumi">
+    Copy example configuration:
+    ```bash
+    cp Pulumi.prod.yaml.example Pulumi.prod.yaml
+    ```
+    
+    Update required values:
+    ```yaml
+    config:
+      aws:region: us-west-2
+      suna:secretsManagerArn: arn:aws:secretsmanager:...
+      suna:containerImage: ghcr.io/kortix-ai/suna-backend:prod
+      suna:vpcId: vpc-...
+      suna:publicSubnets: '["subnet-...", "subnet-..."]'
+      suna:privateSubnets: '["subnet-...", "subnet-..."]'
+    ```
+  </Step>
+  
+  <Step title="Deploy Infrastructure">
+    ```bash
+    # Preview changes
+    pulumi preview
+    
+    # Deploy
+    pulumi up
+    ```
+  </Step>
+</Steps>
+
+### ECS Configuration
+
+Key ECS settings from the infrastructure:
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| **Task CPU** | 2048 (2 vCPU) | Per task |
+| **Task Memory** | 4096 MB | Per task |
+| **Desired Count** | 2-6 tasks | Auto-scales |
+| **Deployment Type** | Rolling update | Zero downtime |
+| **Health Check** | `/v1/health-docker` | Endpoint |
+
+### Auto-Scaling
+
+ECS auto-scaling configuration:
+
+```typescript
+// Target tracking policies
+{
+  targetValue: 70,  // CPU percentage
+  scaleOutCooldown: 60,   // seconds
+  scaleInCooldown: 300,   // seconds
+}
+```
+
+**Scheduled scaling:**
+- Peak hours (Mon-Fri 6AM-6PM PT): 3-10 tasks
+- Off-peak: 2-6 tasks
+
+## AWS EKS Deployment
+
+Kubernetes-based deployment for enterprise scale with advanced features.
+
+### Architecture
+
+```
+ALB → EKS Cluster → Node Group → Pods
+        ├── Horizontal Pod Autoscaler (4-15 pods)
+        ├── Cluster Autoscaler (2-8 nodes)
+        └── Better Stack Monitoring
+```
+
+### Prerequisites
+
+- AWS account with EKS permissions
+- `kubectl` installed
+- Pulumi installed
+- Container image in ECR/GHCR
+
+### Infrastructure Deployment
+
+<Steps>
+  <Step title="Navigate to EKS Config">
+    ```bash
+    cd infra/environments/prod
+    ```
+  </Step>
+  
+  <Step title="Configure EKS Settings">
+    The infrastructure creates:
+    - EKS cluster (v1.31)
+    - Node group with c7i.2xlarge instances (8 vCPU, 16 GB RAM)
+    - Application Load Balancer
+    - Auto-scaling policies
+    - CloudWatch monitoring
+  </Step>
+  
+  <Step title="Deploy Infrastructure">
+    ```bash
+    pulumi up
+    ```
+    
+    This creates:
+    - EKS cluster: `suna-eks`
+    - Namespace: `suna`
+    - Deployment: `suna-api`
+    - Service: `suna-api` (ClusterIP)
+    - Ingress: `suna-api` (ALB)
+    - HPA: `suna-api` (4-15 pods)
+  </Step>
+  
+  <Step title="Configure kubectl">
+    ```bash
+    aws eks update-kubeconfig \
+      --region us-west-2 \
+      --name suna-eks
+    ```
+  </Step>
+</Steps>
+
+### Kubernetes Configuration
+
+**Pod resources:**
+```yaml
+resources:
+  requests:
+    cpu: 500m      # 0.5 cores guaranteed
+    memory: 2Gi    # 2GB guaranteed
+  limits:
+    cpu: 1500m     # 1.5 cores max
+    memory: 3Gi    # 3GB max (OOMKill if exceeded)
+```
+
+**Autoscaling:**
+```yaml
+HorizontalPodAutoscaler:
+  minReplicas: 4
+  maxReplicas: 15
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+```
+
+**Health checks:**
+- Startup: 10s initial delay, 12 attempts × 10s = 130s max startup time
+- Readiness: Every 10s, removes from load balancer after 3 failures
+- Liveness: Every 30s, restarts pod after 3 failures
+
+### EKS Operations
+
+**Deploy new version:**
+```bash
+# Update image
+kubectl set image deployment/suna-api \
+  suna-api=ghcr.io/kortix-ai/suna-backend:new-tag \
+  -n suna
+
+# Watch rollout
+kubectl rollout status deployment/suna-api -n suna
+```
+
+**Scale manually:**
+```bash
+# Scale pods
+kubectl scale deployment/suna-api -n suna --replicas=6
+
+# Scale nodes
+aws eks update-nodegroup-config \
+  --cluster-name suna-eks \
+  --nodegroup-name suna-api-nodes \
+  --scaling-config minSize=3,maxSize=8,desiredSize=4
+```
+
+**View logs:**
+```bash
+# All pods
+kubectl logs -l app.kubernetes.io/name=suna-api -n suna -f
+
+# Specific pod
+kubectl logs <pod-name> -n suna
+```
+
+**Check status:**
+```bash
+# Pods
+kubectl get pods -n suna
+
+# Nodes
+kubectl get nodes
+
+# Resource usage
+kubectl top pods -n suna
+kubectl top nodes
+```
+
+For detailed EKS operations, see the [EKS Operations Guide](https://github.com/kortix-ai/suna/blob/main/infra/docs/eks-operations-guide.md).
+
+## AWS Lightsail Deployment
+
+Cost-effective deployment for small workloads.
+
+<Steps>
+  <Step title="Create Lightsail Instance">
+    - Go to AWS Lightsail console
+    - Create instance with Ubuntu 22.04 LTS
+    - Choose plan: 2GB RAM minimum, 4GB recommended
+    - Enable static IP
+  </Step>
+  
+  <Step title="Configure Instance">
+    SSH into instance and follow Docker Compose deployment steps above.
+  </Step>
+  
+  <Step title="Setup Cloudflare Tunnel">
+    ```bash
+    # Install cloudflared
+    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+    sudo mv cloudflared /usr/local/bin/
+    sudo chmod +x /usr/local/bin/cloudflared
+    
+    # Authenticate
+    cloudflared tunnel login
+    
+    # Create tunnel
+    cloudflared tunnel create suna
+    
+    # Configure tunnel
+    sudo nano ~/.cloudflared/config.yml
+    ```
+    
+    Config:
+    ```yaml
+    tunnel: <tunnel-id>
+    credentials-file: /home/ubuntu/.cloudflared/<tunnel-id>.json
+    ingress:
+      - hostname: api.yourdomain.com
+        service: http://localhost:8000
+      - hostname: yourdomain.com
+        service: http://localhost:3000
+      - service: http_status:404
+    ```
+    
+    Start tunnel:
+    ```bash
+    cloudflared tunnel run suna
+    ```
+  </Step>
+</Steps>
+
+## CI/CD Pipeline
+
+Kortix includes GitHub Actions workflows for automated deployments.
+
+### Docker Build & Deploy
+
+Workflow: `.github/workflows/docker-build.yml`
+
+Triggers on push to `PRODUCTION` branch:
+
+<Steps>
+  <Step title="Build Image">
+    Builds Docker image for backend and frontend
+  </Step>
+  
+  <Step title="Push to Registry">
+    Pushes to GitHub Container Registry with tags:
+    - `:prod` (latest production)
+    - `:<commit-sha>` (specific version)
+  </Step>
+  
+  <Step title="Deploy to Targets">
+    Deploys in parallel to:
+    - Lightsail (SSH + docker compose)
+    - ECS (update service)
+    - EKS (kubectl set image)
+  </Step>
+</Steps>
+
+### Secrets Configuration
+
+Configure GitHub repository secrets:
+
+| Secret | Description |
+|--------|-------------|
+| `AWS_ACCESS_KEY_ID` | AWS credentials for deployments |
+| `AWS_SECRET_ACCESS_KEY` | AWS credentials |
+| `AWS_REGION` | AWS region (e.g., us-west-2) |
+| `LIGHTSAIL_SSH_KEY` | SSH key for Lightsail access |
+| `LIGHTSAIL_HOST` | Lightsail instance IP |
+
+## Monitoring & Alerting
+
+### CloudWatch
+
+AWS deployments include CloudWatch dashboards and alarms:
+
+**Alarms:**
+- CPU > 70% (warning) or > 85% (critical)
+- Memory > 75% (warning) or > 90% (critical)
+- Pod/Task count < 1 (critical)
+- High latency (P99 > 2000ms)
+- High error rate (> 5%)
+
+**View dashboards:**
+AWS Console → CloudWatch → Dashboards → `suna-api-prod`
+
+### Better Stack
+
+For EKS deployments, Better Stack provides:
+- Real-time log aggregation
+- Performance metrics
+- Uptime monitoring
+- Custom dashboards
+
+## Backup & Disaster Recovery
+
+### Database Backups
+
+Supabase provides automatic backups:
+- Point-in-time recovery
+- Daily snapshots
+- Configurable retention
+
+### Application Backups
+
+For self-managed deployments:
+
+```bash
+# Backup configuration
+tar -czf kortix-config-backup.tar.gz backend/.env apps/frontend/.env.local
+
+# Backup database (if self-hosted)
+pg_dump -h localhost -U postgres -d kortix > kortix-db-backup.sql
+```
+
+### Disaster Recovery Plan
+
+<Steps>
+  <Step title="Identify Failure">
+    Monitor CloudWatch alarms or Better Stack alerts
+  </Step>
+  
+  <Step title="Assess Impact">
+    Check service health, pod/task status, logs
+  </Step>
+  
+  <Step title="Execute Recovery">
+    - For pod crashes: Auto-restart (automatic)
+    - For bad deployment: Rollback with `kubectl rollout undo`
+    - For node failure: Auto-scaling adds replacement
+    - For complete failure: Redeploy from infrastructure code
+  </Step>
+  
+  <Step title="Verify Recovery">
+    Test endpoints, check logs, validate data integrity
+  </Step>
+</Steps>
+
+## Performance Optimization
+
+### Scaling Recommendations
+
+**Development/Testing:**
+- 1-2 pods/tasks
+- t3.medium or t4g.medium instances
+- Single node
+
+**Production (Small):**
+- 2-4 pods/tasks
+- c7i.large or c6i.large instances
+- 2 nodes (HA)
+
+**Production (Large):**
+- 4-15 pods (auto-scaled)
+- c7i.2xlarge instances
+- 2-8 nodes (auto-scaled)
+
+### Cost Optimization
+
+- Use Graviton (ARM) instances: 20% cheaper than x86
+- Use Spot instances for non-critical workloads: 70% cheaper
+- Enable auto-scaling: Scale down during off-peak hours
+- Use CloudFront CDN for static assets
+- Optimize LLM provider costs with model selection
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring" icon="chart-line">
+    Set up monitoring dashboards and alerts
+  </Card>
+  
+  <Card title="Troubleshooting" icon="wrench" href="/self-hosting/troubleshooting">
+    Common deployment issues and solutions
+  </Card>
+</CardGroup>

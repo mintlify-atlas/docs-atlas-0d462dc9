@@ -1,0 +1,268 @@
+---
+title: Browser Automation
+description: Interact with web pages using mouse and keyboard, take screenshots, and extract content with natural language commands
+---
+
+## Overview
+
+Kortix agents can control a real browser using natural language commands. This enables agents to interact with any website just like a human would - clicking buttons, filling forms, scrolling pages, and extracting structured data.
+
+The browser automation capability is powered by Stagehand, running in a sandboxed environment with full visual feedback through screenshots.
+
+## Core Functions
+
+The browser tool provides four essential functions that handle all web automation tasks:
+
+### Navigate to URLs
+
+```python
+browser_navigate_to(url="https://example.com")
+```
+
+Navigates to any URL and loads the page.
+
+### Perform Actions
+
+```python
+browser_act(action="click the login button")
+browser_act(action="fill in email with user@example.com")
+browser_act(action="scroll down")
+browser_act(action="select 'Premium' from the dropdown")
+```
+
+Performs any browser action using natural language descriptions:
+- Click any element (buttons, links, images)
+- Fill forms (text, emails, passwords)
+- Select dropdown options
+- Scroll pages
+- Keyboard input (Enter, Tab, Escape)
+- Upload files (with `filePath` parameter)
+
+### Extract Content
+
+```python
+browser_extract_content(instruction="get all product names and prices")
+browser_extract_content(instruction="extract the main article text")
+```
+
+Extracts structured data from web pages using natural language instructions.
+
+### Take Screenshots
+
+```python
+browser_screenshot(name="homepage")
+```
+
+Captures the current page state. Screenshots are automatically included with every action for visual validation.
+
+## Real-World Examples
+
+### Example 1: Login Flow
+
+```python
+# Navigate to login page
+browser_navigate_to(url="https://app.example.com/login")
+
+# Fill in credentials
+browser_act(action="click the email field")
+browser_act(action="type user@example.com")
+browser_act(action="click the password field")
+browser_act(
+    action="type %password%",
+    variables={"password": "secure_pass"}
+)
+
+# Submit form
+browser_act(action="click the Sign In button")
+```
+
+### Example 2: Data Extraction
+
+```python
+# Navigate to product page
+browser_navigate_to(url="https://shop.example.com/products")
+
+# Scroll to load all products
+browser_act(action="scroll to bottom")
+
+# Extract product data
+result = browser_extract_content(
+    instruction="extract all products with name, price, and rating"
+)
+```
+
+### Example 3: Multi-Step Research
+
+```python
+# Research a company website
+browser_navigate_to(url="https://example.io")
+
+# Browse key pages
+browser_act(action="click the Features link")
+features = browser_extract_content(instruction="extract feature descriptions")
+
+browser_act(action="click Pricing")
+pricing = browser_extract_content(instruction="get pricing tiers and costs")
+
+browser_act(action="click About Us")
+company_info = browser_extract_content(instruction="extract company mission and team size")
+```
+
+## Implementation Details
+
+From the source code (`browser_tool.py:108-542`):
+
+```python
+@tool_metadata(
+    display_name="Browser",
+    description="Interact with web pages using mouse and keyboard, take screenshots, and extract content",
+    icon="Globe",
+    color="bg-cyan-100 dark:bg-cyan-800/50"
+)
+class BrowserTool(SandboxToolsBase):
+    """
+    Browser Tool for browser automation using local Stagehand API.
+    
+    Only 4 core functions that can handle everything:
+    - browser_navigate_to: Navigate to URLs
+    - browser_act: Perform any action (click, type, scroll, dropdowns etc.)
+    - browser_extract_content: Extract content from pages
+    - browser_screenshot: Take screenshots
+    """
+```
+
+### Architecture
+
+1. **Stagehand API Server**: Runs on port 8004 inside the sandbox
+2. **Health Checks**: Automatic retry with exponential backoff
+3. **Screenshot Validation**: Every action returns a screenshot for verification
+4. **Secure Variables**: Sensitive data (passwords) not logged to LLM providers
+
+### Validation and Error Handling
+
+From `browser_tool.py:127-194`:
+
+```python
+def _validate_base64_image(self, base64_string: str, max_size_mb: int = 10) -> tuple[bool, str]:
+    """
+    Comprehensive validation of base64 image data.
+    
+    - Checks string length and format
+    - Validates base64 characters
+    - Decodes and verifies image data
+    - Checks file size limits
+    - Validates image format using PIL
+    """
+```
+
+## Security Features
+
+### Variables Parameter
+
+For sensitive data like passwords, use the `variables` parameter:
+
+```python
+browser_act(
+    action="fill in password with %pass%",
+    variables={"pass": "actual_password"}
+)
+```
+
+Variables are NOT shared with LLM providers for security.
+
+### Sandboxed Execution
+
+All browser actions run in an isolated sandbox environment:
+- No access to host system
+- Temporary, disposable instances
+- Safe for any website
+
+## File Upload Support
+
+For actions involving file uploads:
+
+```python
+browser_act(
+    action="click the upload button",
+    filePath="/workspace/documents/resume.pdf"
+)
+```
+
+<Warning>
+Always include the `filePath` parameter when dealing with upload-related elements to prevent accidental file dialog triggers.
+</Warning>
+
+## Best Practices
+
+### 1. Direct URL Research
+
+When researching a specific website, browse it directly:
+
+```python
+# ✅ GOOD: Direct navigation
+browser_navigate_to(url="https://example.io")
+browser_extract_content(instruction="get product features")
+
+# ❌ BAD: Generic web search
+web_search(query="example.io features")
+```
+
+### 2. Screenshot Validation
+
+Every action returns a screenshot. Review it to verify expected results:
+
+```python
+# Action returns screenshot automatically
+result = browser_act(action="click the Submit button")
+# Check the screenshot to confirm button was clicked
+```
+
+### 3. Information Reuse
+
+Once content is extracted, use it as the primary source:
+
+```python
+# Extract content once
+product_data = browser_extract_content(
+    instruction="get product information"
+)
+
+# ✅ Use extracted data for deliverables
+# ❌ Don't override with web search results
+```
+
+## When to Use Browser vs Other Tools
+
+<CardGroup cols={2}>
+  <Card title="Use Browser For" icon="globe">
+    - Interacting with dynamic websites
+    - Filling forms or multi-step flows
+    - Sites requiring clicks/JavaScript
+    - Visual inspection needed
+    - Login-protected content
+  </Card>
+  
+  <Card title="Use Alternative Tools" icon="bolt">
+    - Static content → `scrape_webpage`
+    - API data → API tools
+    - GitHub URLs → `gh` CLI
+    - Simple page reads → `web_search`
+  </Card>
+</CardGroup>
+
+## Limitations
+
+- Requires GEMINI_API_KEY configuration
+- Browser startup takes a few seconds
+- Not suitable for high-frequency automation
+- Screenshots consume additional storage
+
+## Configuration
+
+Browser automation requires:
+
+```bash
+GEMINI_API_KEY=your_api_key_here
+```
+
+The Stagehand API server starts automatically in the sandbox and listens on port 8004.

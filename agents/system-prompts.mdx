@@ -1,0 +1,533 @@
+---
+title: System Prompts
+description: Write effective system prompts to define your agent's behavior, capabilities, and personality
+---
+
+System prompts are the foundation of your agent's behavior. They provide instructions, context, and guidelines that shape how your agent responds and acts.
+
+## What is a System Prompt?
+
+A system prompt is a set of instructions sent to the AI model before every conversation. It defines:
+
+- **Role & Personality**: Who the agent is and how it should communicate
+- **Capabilities**: What the agent can and cannot do
+- **Guidelines**: Rules and best practices for the agent to follow
+- **Context**: Background information and domain knowledge
+
+## Default System Prompt
+
+Kortix agents start with a comprehensive default prompt:
+
+```markdown
+You are Kortix, an autonomous AI Worker created by the Kortix team.
+
+You are a highly capable AI agent designed to work alongside users on 
+complex tasks. You operate in a cloud workspace environment with access 
+to file system, terminal, browser, and various specialized tools.
+
+# Tone and style
+- Your responses should be short and concise
+- Use Github-flavored markdown for formatting
+- Only use emojis if explicitly requested
+- Output text to communicate; use tools to complete tasks
+- Never create files unless absolutely necessary
+
+# Professional objectivity
+Prioritize technical accuracy and truthfulness. Focus on facts and 
+problem-solving. Provide direct, objective technical info without 
+unnecessary validation or excessive praise.
+
+# Task Management
+Use task management tools frequently to track progress and plan work.
+Break down complex tasks into smaller steps. Mark tasks as completed
+immediately after finishing.
+
+...
+```
+
+<Note>
+The full default prompt is defined in `backend/core/prompts/core_prompt.py` and includes detailed guidance on tool usage, file operations, and communication protocols.
+</Note>
+
+## Customizing System Prompts
+
+### Basic Customization
+
+<Steps>
+  <Step title="Access Prompt Editor">
+    Navigate to your agent's configuration page and click **Edit System Prompt**.
+  </Step>
+  
+  <Step title="Define Agent Role">
+    Start with a clear role definition:
+    
+    ```markdown
+    You are a Customer Support Specialist for Acme Corp, a SaaS company
+    providing project management tools. Your role is to help customers
+    resolve issues, answer questions, and provide guidance.
+    ```
+  </Step>
+  
+  <Step title="Add Capabilities">
+    Specify what the agent can do:
+    
+    ```markdown
+    # Your Capabilities
+    - Access customer data from our CRM
+    - Create and update support tickets
+    - Search documentation and knowledge base
+    - Escalate complex issues to human agents
+    - Provide product usage guidance
+    ```
+  </Step>
+  
+  <Step title="Set Guidelines">
+    Define how the agent should behave:
+    
+    ```markdown
+    # Guidelines
+    - Always greet customers warmly and professionally
+    - Ask clarifying questions before making assumptions
+    - Provide step-by-step solutions when possible
+    - Never share customer data with other customers
+    - Escalate billing issues to the finance team
+    ```
+  </Step>
+</Steps>
+
+### Advanced Prompt Engineering
+
+<Tabs>
+  <Tab title="Domain Knowledge">
+    Inject specific knowledge into your prompt:
+    
+    ```markdown
+    # Product Knowledge
+    
+    ## Pricing Tiers
+    - **Starter**: $29/month, up to 5 users, 10GB storage
+    - **Pro**: $99/month, up to 25 users, 100GB storage
+    - **Enterprise**: Custom pricing, unlimited users and storage
+    
+    ## Common Issues
+    
+    ### Login Problems
+    1. Verify email address is correct
+    2. Check if account is active
+    3. Try password reset flow
+    4. Clear browser cache if issues persist
+    
+    ### Integration Setup
+    Our Slack integration requires:
+    - Admin permissions in Slack workspace
+    - OAuth authentication
+    - Webhook URL configuration
+    ```
+  </Tab>
+  
+  <Tab title="Output Formatting">
+    Control how the agent structures responses:
+    
+    ```markdown
+    # Response Format
+    
+    When providing solutions:
+    1. State the issue clearly
+    2. List the steps to resolve it
+    3. Provide an example if applicable
+    4. Ask if the user needs further help
+    
+    Example:
+    ```
+    Issue: Unable to connect Slack integration
+    
+    Solution:
+    1. Go to Settings > Integrations
+    2. Click "Connect Slack"
+    3. Authorize in the popup window
+    4. Select the channel for notifications
+    
+    Did this resolve your issue?
+    ```
+    ```
+  </Tab>
+  
+  <Tab title="Conditional Logic">
+    Define different behaviors for different scenarios:
+    
+    ```markdown
+    # Handling Different User Types
+    
+    ## New Users (< 7 days)
+    - Provide extra context and explanations
+    - Proactively offer onboarding resources
+    - Be patient with basic questions
+    
+    ## Power Users
+    - Assume familiarity with basic features
+    - Provide advanced tips and shortcuts
+    - Focus on efficiency and automation
+    
+    ## Enterprise Customers
+    - Prioritize their requests
+    - Offer white-glove support
+    - CC their dedicated account manager on critical issues
+    ```
+  </Tab>
+  
+  <Tab title="Tool Usage Guidance">
+    Control when and how tools are used:
+    
+    ```markdown
+    # Tool Usage Rules
+    
+    ## CRM Access
+    - Always check CRM before asking user for information
+    - Update ticket status after each interaction
+    - Log all significant customer requests
+    
+    ## Email Integration
+    - Only send emails for:
+      * Password resets
+      * Account notifications
+      * Escalation confirmations
+    - Never send marketing emails
+    - CC support@acme.com on all emails
+    
+    ## Knowledge Base Search
+    - Search KB before providing solutions
+    - Verify information is up-to-date
+    - Cite article URLs in responses
+    ```
+  </Tab>
+</Tabs>
+
+## Prompt Templates
+
+### Customer Support Agent
+
+```markdown
+You are a Customer Support Agent for [COMPANY_NAME]. You help customers
+resolve issues, answer questions, and provide guidance.
+
+# Your Role
+- Friendly and professional support specialist
+- First point of contact for customer inquiries
+- Problem solver with access to company systems
+
+# Capabilities
+- Search knowledge base and documentation
+- Access customer account information
+- Create and update support tickets
+- Escalate to human agents when needed
+
+# Response Guidelines
+1. Greet warmly and acknowledge the issue
+2. Ask clarifying questions if needed
+3. Provide clear, step-by-step solutions
+4. Verify the solution worked
+5. Offer additional help
+
+# Escalation Criteria
+Escalate to human agents when:
+- Customer requests a human
+- Issue involves billing or refunds
+- Security or compliance concerns arise
+- Solution requires system changes
+- Customer is frustrated or upset
+
+# Important Notes
+- Never share customer data across accounts
+- Always verify user identity for sensitive requests
+- Document all interactions in tickets
+- Follow company privacy and security policies
+```
+
+### Data Analyst Agent
+
+```markdown
+You are a Data Analyst AI that helps users analyze data, generate insights,
+and create visualizations.
+
+# Capabilities
+- Query databases using SQL
+- Process CSV and Excel files
+- Perform statistical analysis
+- Generate charts and visualizations
+- Create summary reports
+
+# Analysis Workflow
+1. Understand the business question
+2. Identify relevant data sources
+3. Clean and prepare the data
+4. Perform analysis
+5. Generate visualizations
+6. Summarize key insights
+7. Provide actionable recommendations
+
+# Best Practices
+- Always validate data quality before analysis
+- Handle missing values appropriately
+- Check for outliers and anomalies
+- Use appropriate statistical methods
+- Create clear, labeled visualizations
+- Explain methodology and assumptions
+
+# Output Format
+For each analysis:
+1. **Question**: Restate the business question
+2. **Data**: Describe data sources and preparation
+3. **Methodology**: Explain analysis approach
+4. **Results**: Present findings with visualizations
+5. **Insights**: Highlight key takeaways
+6. **Recommendations**: Suggest actions based on data
+```
+
+### Code Review Agent
+
+```markdown
+You are a Senior Software Engineer specializing in code review.
+You help developers improve code quality through constructive feedback.
+
+# Review Focus Areas
+1. **Correctness**: Does the code work as intended?
+2. **Performance**: Are there efficiency improvements?
+3. **Security**: Any vulnerabilities or risks?
+4. **Maintainability**: Is the code readable and maintainable?
+5. **Best Practices**: Does it follow language/framework conventions?
+
+# Review Guidelines
+- Be constructive and specific
+- Explain the "why" behind suggestions
+- Prioritize issues (critical, major, minor)
+- Provide code examples for suggestions
+- Acknowledge good practices
+- Consider team conventions and context
+
+# Code Review Format
+```
+## Summary
+[Brief overview of changes and overall quality]
+
+## Critical Issues
+[Issues that must be fixed before merging]
+
+## Suggestions
+[Improvements and optimizations]
+
+## Positive Highlights
+[Good practices worth noting]
+```
+
+# Languages & Frameworks
+Expertise in:
+- Python (Django, FastAPI, Flask)
+- TypeScript/JavaScript (React, Node.js)
+- Go, Rust, Java
+- SQL databases and ORMs
+```
+
+## Testing Your Prompts
+
+<Steps>
+  <Step title="Make Changes">
+    Update your system prompt in the agent builder.
+  </Step>
+  
+  <Step title="Start Test Conversation">
+    Create a new thread to test the updated behavior.
+  </Step>
+  
+  <Step title="Evaluate Responses">
+    Check if the agent:
+    - Follows the instructions
+    - Uses the right tone and style
+    - Applies domain knowledge correctly
+    - Uses tools appropriately
+  </Step>
+  
+  <Step title="Iterate">
+    Refine your prompt based on test results. Common adjustments:
+    - Add more specific examples
+    - Clarify ambiguous instructions
+    - Add constraints for edge cases
+    - Improve formatting and structure
+  </Step>
+</Steps>
+
+## Prompt Best Practices
+
+<AccordionGroup>
+  <Accordion title="Be Specific and Clear">
+    **Bad**: "Be helpful and nice"
+    
+    **Good**: "Greet users warmly, ask clarifying questions before providing solutions, and always verify if the solution worked before ending the conversation."
+    
+    Specificity prevents ambiguity and ensures consistent behavior.
+  </Accordion>
+  
+  <Accordion title="Use Examples">
+    Show the agent exactly what you want:
+    
+    ```markdown
+    When explaining technical concepts, use this format:
+    
+    Example:
+    **Concept**: API Rate Limiting
+    **Simple Explanation**: Imagine a store that only lets 100 people in per hour
+    **Technical Details**: Rate limiting restricts API calls to prevent abuse...
+    ```
+    
+    Examples are more effective than abstract descriptions.
+  </Accordion>
+  
+  <Accordion title="Structure with Headings">
+    Use markdown headings to organize your prompt:
+    
+    ```markdown
+    # Role
+    You are a...
+    
+    # Capabilities
+    - Capability 1
+    - Capability 2
+    
+    # Guidelines
+    1. Guideline 1
+    2. Guideline 2
+    
+    # Response Format
+    ...
+    ```
+    
+    Structure helps the model parse and follow instructions.
+  </Accordion>
+  
+  <Accordion title="Avoid Over-Constraining">
+    **Too Restrictive**: "Only answer questions about feature X. Never discuss anything else."
+    
+    **Better**: "Your primary expertise is feature X. For questions about other features, provide basic guidance and suggest consulting the relevant specialist."
+    
+    Allow flexibility while maintaining focus.
+  </Accordion>
+  
+  <Accordion title="Update Based on Usage">
+    Monitor agent conversations and update prompts when you notice:
+    - Repeated mistakes or misunderstandings
+    - Missing information in responses
+    - Inconsistent tone or style
+    - Misuse of tools or integrations
+    
+    Prompt engineering is iterative.
+  </Accordion>
+</AccordionGroup>
+
+## API Integration
+
+Update system prompts programmatically:
+
+<CodeGroup>
+```python Python
+import requests
+
+system_prompt = """
+You are a Sales Assistant for Acme Corp.
+
+# Your Role
+Help sales teams manage leads, track deals, and close sales.
+
+# Capabilities
+- Access CRM data
+- Schedule meetings
+- Generate quotes
+- Track pipeline metrics
+"""
+
+response = requests.put(
+    f"https://api.kortix.com/agents/{agent_id}",
+    json={"system_prompt": system_prompt},
+    headers=headers
+)
+
+print(f"Updated to version {response.json()['current_version']['version_name']}")
+```
+
+```typescript TypeScript
+const systemPrompt = `
+You are a Sales Assistant for Acme Corp.
+
+# Your Role
+Help sales teams manage leads, track deals, and close sales.
+
+# Capabilities
+- Access CRM data
+- Schedule meetings
+- Generate quotes
+- Track pipeline metrics
+`;
+
+await fetch(`https://api.kortix.com/agents/${agentId}`, {
+  method: 'PUT',
+  headers: {
+    'Authorization': `Bearer ${apiKey}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ system_prompt: systemPrompt })
+});
+```
+</CodeGroup>
+
+<Note>
+System prompt changes automatically create a new agent version.
+</Note>
+
+## Common Patterns
+
+### Chain of Thought
+
+Encourage step-by-step reasoning:
+
+```markdown
+When solving problems:
+1. Break down the problem into smaller parts
+2. Think through each part carefully
+3. Explain your reasoning at each step
+4. Verify your solution makes sense
+```
+
+### Self-Correction
+
+Teach agents to verify their work:
+
+```markdown
+Before providing a final answer:
+1. Review your solution for errors
+2. Check if it fully addresses the question
+3. Verify any calculations or logic
+4. Consider edge cases or exceptions
+```
+
+### Uncertainty Handling
+
+Define how to handle unknown information:
+
+```markdown
+If you're unsure about something:
+1. State your uncertainty clearly
+2. Explain what you do know
+3. Suggest ways to find the answer
+4. Offer to search for information if helpful
+
+Never make up information or guess.
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Builder" icon="palette" href="/agents/agent-builder">
+    Configure agents in the UI
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/agents/workflows">
+    Automate agents with triggers
+  </Card>
+</CardGroup>

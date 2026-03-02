@@ -1,0 +1,301 @@
+---
+title: 'List Threads'
+description: 'Retrieve a paginated list of threads for the authenticated user'
+---
+
+## Overview
+
+Returns all threads owned by the authenticated user with pagination support. Results are ordered by creation date (newest first) and include project and sandbox information.
+
+<Note>
+This endpoint automatically triggers background embedding of unembedded threads for semantic search functionality.
+</Note>
+
+## Request
+
+<ParamField query="page" type="integer" default={1}>
+  Page number (1-based). Must be greater than or equal to 1.
+</ParamField>
+
+<ParamField query="limit" type="integer" default={100}>
+  Number of items per page. Must be between 1 and 1000.
+</ParamField>
+
+### Authentication
+
+Requires a valid JWT token via `verify_and_get_user_id_from_jwt`.
+
+```bash cURL
+curl "https://api.kortix.ai/threads?page=1&limit=50" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+```python Python SDK
+from kortix import Kortix
+
+client = Kortix(api_key="YOUR_API_KEY")
+
+response = client.threads.list(
+    page=1,
+    limit=50
+)
+
+for thread in response.threads:
+    print(f"{thread.name} - {thread.message_count} messages")
+
+print(f"Total: {response.pagination.total} threads")
+```
+
+```javascript JavaScript SDK
+import { Kortix } from 'kortix';
+
+const client = new Kortix({
+  apiKey: 'YOUR_API_KEY'
+});
+
+const response = await client.threads.list({
+  page: 1,
+  limit: 50
+});
+
+response.threads.forEach(thread => {
+  console.log(`${thread.name} - ${thread.message_count} messages`);
+});
+
+console.log(`Total: ${response.pagination.total} threads`);
+```
+
+## Response
+
+<ResponseField name="threads" type="array" required>
+  Array of thread objects
+  
+  <Expandable title="Thread Object Fields">
+    <ResponseField name="thread_id" type="string" required>
+      Unique identifier for the thread
+    </ResponseField>
+    
+    <ResponseField name="project_id" type="string">
+      The project this thread belongs to
+    </ResponseField>
+    
+    <ResponseField name="name" type="string" required>
+      Thread name (defaults to "New Chat")
+    </ResponseField>
+    
+    <ResponseField name="metadata" type="object" required>
+      Thread metadata (custom key-value pairs)
+    </ResponseField>
+    
+    <ResponseField name="is_public" type="boolean" required>
+      Whether the thread is publicly accessible
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string" required>
+      ISO 8601 timestamp of creation
+    </ResponseField>
+    
+    <ResponseField name="updated_at" type="string" required>
+      ISO 8601 timestamp of last update
+    </ResponseField>
+    
+    <ResponseField name="project" type="object">
+      Associated project information
+      
+      <ResponseField name="project.project_id" type="string" required>
+        Project unique identifier
+      </ResponseField>
+      
+      <ResponseField name="project.name" type="string" required>
+        Project name
+      </ResponseField>
+      
+      <ResponseField name="project.icon_name" type="string">
+        Icon identifier
+      </ResponseField>
+      
+      <ResponseField name="project.is_public" type="boolean" required>
+        Whether the project is public
+      </ResponseField>
+      
+      <ResponseField name="project.created_at" type="string" required>
+        ISO 8601 timestamp of project creation
+      </ResponseField>
+      
+      <ResponseField name="project.updated_at" type="string" required>
+        ISO 8601 timestamp of project update
+      </ResponseField>
+      
+      <ResponseField name="project.sandbox" type="object">
+        Sandbox configuration if available
+        
+        <ResponseField name="project.sandbox.id" type="string">
+          Sandbox external ID
+        </ResponseField>
+        
+        <ResponseField name="project.sandbox.pass" type="string">
+          Sandbox authentication password
+        </ResponseField>
+        
+        <ResponseField name="project.sandbox.vnc_preview" type="string">
+          VNC preview URL
+        </ResponseField>
+        
+        <ResponseField name="project.sandbox.sandbox_url" type="string">
+          Web preview URL
+        </ResponseField>
+        
+        <ResponseField name="project.sandbox.token" type="string">
+          Sandbox authentication token
+        </ResponseField>
+      </ResponseField>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="pagination" type="object" required>
+  Pagination metadata
+  
+  <Expandable title="Pagination Fields">
+    <ResponseField name="page" type="integer" required>
+      Current page number (1-based)
+    </ResponseField>
+    
+    <ResponseField name="limit" type="integer" required>
+      Items per page
+    </ResponseField>
+    
+    <ResponseField name="total" type="integer" required>
+      Total number of threads
+    </ResponseField>
+    
+    <ResponseField name="pages" type="integer" required>
+      Total number of pages
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Response Example
+
+```json
+{
+  "threads": [
+    {
+      "thread_id": "550e8400-e29b-41d4-a716-446655440000",
+      "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "name": "Data Analysis",
+      "metadata": {},
+      "is_public": false,
+      "created_at": "2026-03-02T14:30:00Z",
+      "updated_at": "2026-03-02T15:45:00Z",
+      "project": {
+        "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "name": "Analytics Project",
+        "icon_name": "chart",
+        "is_public": false,
+        "created_at": "2026-03-02T14:30:00Z",
+        "updated_at": "2026-03-02T14:30:00Z",
+        "sandbox": {
+          "id": "sandbox_abc123",
+          "pass": "550e8400-e29b-41d4-a716-446655440001",
+          "vnc_preview": "https://sandbox.kortix.ai/vnc/abc123",
+          "sandbox_url": "https://sandbox.kortix.ai/web/abc123",
+          "token": "tok_xyz789"
+        }
+      }
+    },
+    {
+      "thread_id": "660e8400-e29b-41d4-a716-446655440001",
+      "project_id": "8c9e6679-7425-40de-944b-e07fc1f90ae8",
+      "name": "New Chat",
+      "metadata": {},
+      "is_public": false,
+      "created_at": "2026-03-01T10:15:00Z",
+      "updated_at": "2026-03-01T10:15:00Z",
+      "project": {
+        "project_id": "8c9e6679-7425-40de-944b-e07fc1f90ae8",
+        "name": "Quick Test",
+        "icon_name": null,
+        "is_public": false,
+        "created_at": "2026-03-01T10:15:00Z",
+        "updated_at": "2026-03-01T10:15:00Z",
+        "sandbox": null
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 2,
+    "pages": 1
+  }
+}
+```
+
+### Empty Results
+
+When no threads are found:
+
+```json
+{
+  "threads": [],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 0,
+    "pages": 0
+  }
+}
+```
+
+## Background Processing
+
+When threads are returned, a background task is automatically triggered to embed any unembedded threads for semantic search. This is non-blocking and doesn't affect the response time.
+
+## Error Responses
+
+<Expandable title="400 - Bad Request">
+
+Returned when query parameters are invalid:
+
+```json
+{
+  "detail": [
+    {
+      "loc": ["query", "page"],
+      "msg": "ensure this value is greater than or equal to 1",
+      "type": "value_error.number.not_ge"
+    }
+  ]
+}
+```
+
+</Expandable>
+
+<Expandable title="401 - Unauthorized">
+
+Returned when authentication fails or token is invalid.
+
+</Expandable>
+
+<Expandable title="500 - Internal Server Error">
+
+```json
+{
+  "detail": "Failed to fetch threads: <error message>"
+}
+```
+
+</Expandable>
+
+## Implementation Details
+
+- Threads are ordered by `created_at DESC` (newest first)
+- The query uses a window function to get total count without a separate query
+- Results include project and sandbox information via LEFT JOINs
+- Maximum limit is 1000 items per page
+
+## Source Reference
+
+Implementation: `/workspace/source/backend/core/threads/api.py:96`  
+Repository function: `/workspace/source/backend/core/threads/repo.py:16`

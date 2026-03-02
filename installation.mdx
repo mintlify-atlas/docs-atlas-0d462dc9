@@ -1,0 +1,682 @@
+---
+title: Self-Hosted Installation
+description: Deploy Kortix on your own infrastructure with the automated setup wizard
+---
+
+## Overview
+
+Kortix can be self-hosted using either Docker Compose (recommended) or manual installation. The automated setup wizard (`setup.py`) handles all configuration, from dependencies to database initialization.
+
+## System Requirements
+
+<CardGroup cols={2}>
+  <Card title="Hardware" icon="microchip">
+    - **CPU**: 4+ cores recommended
+    - **RAM**: 8GB minimum, 16GB recommended
+    - **Storage**: 20GB+ free space
+  </Card>
+  <Card title="Software" icon="code">
+    - **OS**: Linux, macOS, or Windows (WSL2)
+    - **Python**: 3.11 or higher
+    - **Node.js**: 18.x or higher
+    - **Docker**: Latest version (for Docker setup)
+  </Card>
+</CardGroup>
+
+## Installation Methods
+
+Choose between two setup methods:
+
+<Tabs>
+  <Tab title="Docker (Recommended)">
+    ### Docker Setup
+
+    The Docker setup runs all services in containers for isolation and easy management.
+
+    **Advantages:**
+    - Isolated environments
+    - Easy deployment and scaling
+    - Consistent across platforms
+    - Simple service management
+
+    **Services:**
+    - Redis (containerized)
+    - Backend API (containerized)
+    - Frontend (containerized)
+    - Agent runtime (containerized)
+
+    <Note>
+      Currently, local Supabase is not supported with Docker Compose. Use cloud Supabase for Docker setups.
+    </Note>
+  </Tab>
+
+  <Tab title="Manual">
+    ### Manual Setup
+
+    The manual setup runs services natively on your system.
+
+    **Advantages:**
+    - Full control over services
+    - Supports local Supabase
+    - Easier debugging
+    - Lower resource overhead
+
+    **Services:**
+    - Redis (Docker container)
+    - Backend API (native process)
+    - Frontend (native process)
+
+    **Additional Requirements:**
+    - `pnpm` package manager
+    - `uv` Python package installer
+  </Tab>
+</Tabs>
+
+## Step-by-Step Installation
+
+<Steps>
+  <Step title="Clone the Repository">
+    ```bash
+    git clone https://github.com/kortix-ai/suna.git
+    cd suna
+    ```
+  </Step>
+
+  <Step title="Run the Setup Wizard">
+    Launch the interactive setup wizard:
+
+    ```bash
+    python setup.py
+    ```
+
+    The wizard automatically:
+    - Checks system dependencies
+    - Installs required Python packages (`pydantic`, `rich`)
+    - Guides you through configuration
+    - Saves progress for resumable setup
+
+    <Info>
+      If interrupted, simply run `python setup.py` again to resume from where you left off.
+    </Info>
+  </Step>
+
+  <Step title="Choose Setup Method">
+    The wizard will ask you to choose:
+
+    ```
+    How would you like to set up Kortix?
+      [1] Docker - Run all services in containers (recommended)
+      [2] Manual - Run services natively on your system
+    ```
+
+    Select based on your preference and requirements.
+  </Step>
+
+  <Step title="Verify Dependencies">
+    The wizard checks for required tools:
+
+    **For Docker Setup:**
+    - Docker and Docker Compose
+    - Git
+
+    **For Manual Setup:**
+    - Python 3.11+
+    - Node.js 18+
+    - pnpm
+    - uv (Python package installer)
+    - Git
+    - Docker (for Redis only)
+
+    <Warning>
+      Missing dependencies will be flagged. Install them before continuing.
+    </Warning>
+  </Step>
+
+  <Step title="Configure Supabase">
+    Choose your Supabase setup:
+
+    ```
+    How would you like to set up Supabase?
+      [1] Use Kortix Cloud Supabase (easiest)
+      [2] Use your own cloud Supabase
+      [3] Use local Supabase (manual setup only)
+    ```
+
+    <CodeGroup>
+      ```bash Kortix Cloud Supabase
+      # Uses pre-configured staging Supabase
+      # No additional setup required
+      # Recommended for quick start
+      ```
+
+      ```bash Your Own Cloud Supabase
+      # You'll need:
+      # - Supabase project URL
+      # - Supabase anon key
+      # - Supabase service role key
+      # - Database password
+      ```
+
+      ```bash Local Supabase (Manual Only)
+      # Requires:
+      # - npx supabase start
+      # - Only available with manual setup
+      # - Full data privacy and control
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure LLM Providers">
+    Add API keys for your preferred LLM providers:
+
+    <Tabs>
+      <Tab title="Anthropic (Claude)">
+        ```
+        Enter your Anthropic API key: sk-ant-...
+        ```
+        Get your key from: https://console.anthropic.com/
+      </Tab>
+
+      <Tab title="OpenAI">
+        ```
+        Enter your OpenAI API key: sk-...
+        ```
+        Get your key from: https://platform.openai.com/api-keys
+      </Tab>
+
+      <Tab title="Groq">
+        ```
+        Enter your Groq API key: gsk_...
+        ```
+        Get your key from: https://console.groq.com/keys
+      </Tab>
+
+      <Tab title="Together AI">
+        ```
+        Enter your Together AI API key: ...
+        ```
+        Get your key from: https://api.together.xyz/settings/api-keys
+      </Tab>
+    </Tabs>
+
+    <Tip>
+      You can configure multiple providers and switch between them in the dashboard.
+    </Tip>
+  </Step>
+
+  <Step title="Configure Optional Integrations">
+    The wizard will prompt for optional services:
+
+    <AccordionGroup>
+      <Accordion title="Search APIs" icon="magnifying-glass">
+        **Tavily Search API**
+        - Enables web search capabilities
+        - Get key from: https://tavily.com/
+
+        **Firecrawl API**
+        - Web scraping and crawling
+        - Get key from: https://firecrawl.dev/
+      </Accordion>
+
+      <Accordion title="RapidAPI" icon="bolt">
+        - Access to various third-party APIs
+        - Get key from: https://rapidapi.com/
+      </Accordion>
+
+      <Accordion title="Composio" icon="puzzle-piece">
+        - Pre-built integrations for 200+ apps
+        - Get key from: https://app.composio.dev/
+      </Accordion>
+
+      <Accordion title="MCP Tools" icon="tools">
+        - Model Context Protocol integration
+        - Extend agents with custom tools
+        - Configure during setup or later
+      </Accordion>
+    </AccordionGroup>
+
+    <Note>
+      All integrations are optional. Skip any you don't need and add them later.
+    </Note>
+  </Step>
+
+  <Step title="Environment Generation">
+    The wizard automatically generates configuration files:
+
+    ```
+    ✓ Writing backend/.env
+    ✓ Writing apps/frontend/.env
+    ✓ Validating configuration
+    ```
+
+    Files created:
+    - `backend/.env` - Backend API configuration
+    - `apps/frontend/.env` - Frontend configuration
+    - `.setup_progress` - Resume state (can be deleted after setup)
+  </Step>
+
+  <Step title="Database Initialization">
+    The wizard sets up the database schema:
+
+    ```
+    ✓ Connecting to Supabase
+    ✓ Creating tables
+    ✓ Running migrations
+    ✓ Setting up authentication
+    ```
+
+    This creates all necessary tables for:
+    - User authentication
+    - Agent configurations
+    - Conversation threads
+    - File storage
+    - Workflow state
+  </Step>
+
+  <Step title="Install Dependencies">
+    The wizard installs required packages:
+
+    <CodeGroup>
+      ```bash Docker Setup
+      ✓ Building Docker images
+      ✓ Pulling base images
+      ✓ Installing dependencies in containers
+      ```
+
+      ```bash Manual Setup
+      ✓ Installing backend dependencies (uv)
+      ✓ Installing frontend dependencies (pnpm)
+      ✓ Building frontend
+      ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Starting Kortix
+
+After installation, use the service manager:
+
+<CodeGroup>
+  ```bash Interactive Mode
+  python start.py
+  ```
+
+  ```bash Direct Commands
+  python start.py start    # Start all services
+  python start.py stop     # Stop all services
+  python start.py status   # Show service status
+  python start.py restart  # Restart all services
+  ```
+</CodeGroup>
+
+### Service Manager Features
+
+The `start.py` script automatically:
+- Detects your setup method (Docker or Manual)
+- Manages appropriate services
+- Shows real-time status
+- Handles graceful shutdown
+- Provides log file locations
+
+<CodeGroup>
+  ```bash Manual Setup Services
+  # Redis (Docker container)
+  docker compose up -d redis
+
+  # Backend (native process)
+  cd backend && uv run api.py
+
+  # Frontend (native process) 
+  cd apps/frontend && pnpm run dev
+  ```
+
+  ```bash Docker Setup Services
+  # All services via Docker Compose
+  docker compose up -d
+  ```
+</CodeGroup>
+
+## Monitoring and Logs
+
+<Tabs>
+  <Tab title="Manual Setup">
+    ```bash
+    # View both backend and frontend logs
+    tail -f backend.log frontend.log
+
+    # View backend only
+    tail -f backend.log
+
+    # View frontend only
+    tail -f frontend.log
+    ```
+
+    Log files are created in the repository root.
+  </Tab>
+
+  <Tab title="Docker Setup">
+    ```bash
+    # View all service logs
+    docker compose logs -f
+
+    # View specific service
+    docker compose logs -f backend
+    docker compose logs -f frontend
+    docker compose logs -f redis
+
+    # Last 100 lines
+    docker compose logs --tail=100
+    ```
+  </Tab>
+</Tabs>
+
+## Updating Configuration
+
+To add or update API keys after installation:
+
+```bash
+python setup.py
+```
+
+The wizard offers options to:
+1. **Add/Update API Keys** - Modify existing configuration
+2. **Clear setup and start fresh** - Remove all configuration
+
+<Warning>
+Clearing setup will delete all `.env` files and progress state.
+</Warning>
+
+## Architecture Deep Dive
+
+Kortix consists of four main components:
+
+### 1. Backend API (Port 8000)
+
+Python/FastAPI service providing:
+
+```python
+# Core API modules
+- /v1/agents      # Agent management
+- /v1/threads     # Conversation threads
+- /v1/runs        # Agent executions
+- /v1/tools       # Tool registry
+- /v1/mcp         # MCP integration
+- /v1/knowledge   # Knowledge bases
+```
+
+**Key Features:**
+- REST API endpoints
+- Thread management
+- Agent orchestration
+- LLM integration via LiteLLM
+- Tool execution
+- WebSocket streaming
+
+### 2. Frontend Dashboard (Port 3000)
+
+Next.js/React application:
+
+```typescript
+// Main features
+- Chat interface
+- Agent builder
+- Workflow designer
+- Monitoring dashboard
+- Settings management
+```
+
+**Technologies:**
+- Next.js 14+
+- React 18+
+- Tailwind CSS
+- Supabase Auth
+
+### 3. Agent Runtime
+
+Isolated Docker containers for each agent:
+
+```yaml
+services:
+  agent-runtime:
+    image: kortix-agent-runtime
+    features:
+      - Browser automation (Playwright)
+      - Code interpreter (Python)
+      - File system access
+      - Tool integration
+      - Security sandboxing
+```
+
+### 4. Database & Storage
+
+Supabase provides:
+
+```sql
+-- Core tables
+users                 -- User accounts
+agents                -- Agent configurations  
+threads               -- Conversation threads
+messages              -- Chat messages
+runs                  -- Execution records
+tools                 -- Available tools
+knowledge_bases       -- Agent knowledge
+```
+
+## Network Configuration
+
+### Default Ports
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 3000 | Web dashboard |
+| Backend | 8000 | REST API |
+| Redis | 6379 | Message queue |
+| Supabase | 54321 | Local DB (manual only) |
+
+### DNS Configuration
+
+Docker setup uses optimized DNS:
+
+```yaml
+# docker-compose.yaml
+dns:
+  - 8.8.8.8      # Google DNS
+  - 1.1.1.1      # Cloudflare DNS
+dns_search:
+  - .
+```
+
+This reduces DNS lookup latency for third-party API calls.
+
+## Security Best Practices
+
+<Warning>
+**Critical Security Steps:**
+
+1. Never commit `.env` files to version control
+2. Use strong database passwords
+3. Rotate API keys regularly
+4. Enable HTTPS in production
+5. Restrict network access to necessary ports
+6. Keep Docker images updated
+</Warning>
+
+### Production Checklist
+
+<Steps>
+  <Step title="Environment Variables">
+    - Store secrets in a secure vault (e.g., AWS Secrets Manager)
+    - Use separate credentials for production
+    - Enable environment variable validation
+  </Step>
+
+  <Step title="Database Security">
+    - Enable Row Level Security (RLS) in Supabase
+    - Use connection pooling
+    - Configure backup retention
+    - Enable audit logging
+  </Step>
+
+  <Step title="Network Security">
+    - Deploy behind a reverse proxy (nginx, Caddy)
+    - Enable HTTPS with valid certificates
+    - Configure CORS policies
+    - Use VPC for internal services
+  </Step>
+
+  <Step title="Monitoring">
+    - Set up health checks
+    - Configure alerting
+    - Enable application logging
+    - Monitor resource usage
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Setup wizard fails to install dependencies">
+    **Problem**: Missing `pydantic` or `rich` packages
+
+    **Solution**:
+    ```bash
+    # Manual installation
+    pip install pydantic rich
+
+    # Or with uv
+    uv pip install pydantic rich
+
+    # Then re-run setup
+    python setup.py
+    ```
+  </Accordion>
+
+  <Accordion title="Docker Compose command not found">
+    **Problem**: Docker Compose not installed
+
+    **Solution**:
+    ```bash
+    # For Docker Desktop (Mac/Windows)
+    # Install from docker.com
+
+    # For Linux
+    sudo apt-get install docker-compose-plugin
+
+    # Verify installation
+    docker compose version
+    ```
+  </Accordion>
+
+  <Accordion title="Port conflicts (3000 or 8000 already in use)">
+    **Problem**: Another service is using required ports
+
+    **Solution**:
+    ```bash
+    # Find process using port 3000
+    lsof -i :3000
+
+    # Kill the process
+    kill -9 <PID>
+
+    # Or modify ports in docker-compose.yaml
+    ports:
+      - "3001:3000"  # Map to different host port
+    ```
+  </Accordion>
+
+  <Accordion title="Database connection errors">
+    **Problem**: Cannot connect to Supabase
+
+    **Solution**:
+    - Verify credentials in `backend/.env`
+    - Check network connectivity
+    - For local Supabase: `npx supabase status`
+    - For cloud: verify project is active
+    - Check firewall rules
+  </Accordion>
+
+  <Accordion title="Frontend build fails">
+    **Problem**: pnpm build errors
+
+    **Solution**:
+    ```bash
+    # Clear cache and reinstall
+    cd apps/frontend
+    rm -rf node_modules .next
+    pnpm install
+    pnpm run build
+
+    # If still failing, check Node version
+    node --version  # Should be 18+
+    ```
+  </Accordion>
+
+  <Accordion title="Backend API errors">
+    **Problem**: 500 errors from backend
+
+    **Solution**:
+    ```bash
+    # Check backend logs
+    tail -f backend.log
+
+    # Or for Docker
+    docker compose logs backend
+
+    # Common issues:
+    # - Missing API keys in .env
+    # - Invalid Supabase credentials
+    # - Redis not running
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Uninstalling
+
+To completely remove Kortix:
+
+<CodeGroup>
+  ```bash Docker Setup
+  # Stop and remove all services
+  docker compose down -v
+
+  # Remove images
+  docker rmi $(docker images 'ghcr.io/suna-ai/*' -q)
+
+  # Delete repository
+  cd ..
+  rm -rf suna
+  ```
+
+  ```bash Manual Setup
+  # Stop services
+  python start.py stop
+
+  # Remove local Supabase (if used)
+  npx supabase stop --no-backup
+
+  # Delete repository
+  cd ..
+  rm -rf suna
+  ```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration Guide" icon="gear" href="/configuration/environment">
+    Deep dive into environment variables and settings
+  </Card>
+  <Card title="Deploy to Production" icon="rocket" href="/self-hosting/deployment">
+    Production deployment best practices
+  </Card>
+  <Card title="API Reference" icon="book" href="/api/introduction">
+    Explore the complete REST API
+  </Card>
+  <Card title="Agent Development" icon="robot" href="/agents/overview">
+    Start building custom agents
+  </Card>
+</CardGroup>
+
+<Tip>
+For deployment to cloud platforms (AWS, GCP, Azure), see our [Cloud Deployment Guide](/self-hosting/deployment).
+</Tip>

@@ -1,0 +1,202 @@
+---
+title: 'Delete Thread'
+description: 'Delete a thread and optionally its associated project'
+---
+
+## Overview
+
+Deletes a thread and all associated data including messages and agent runs. If the thread is the last one in its project, the project and its sandbox are also deleted automatically.
+
+<Warning>
+This operation is irreversible. All messages, agent runs, and thread data will be permanently deleted.
+</Warning>
+
+## Request
+
+<ParamField path="thread_id" type="string" required>
+  The unique identifier of the thread to delete
+</ParamField>
+
+### Authentication
+
+Requires write access to the thread. The endpoint uses `require_thread_write_access` which validates:
+- Valid JWT token
+- User owns the thread OR has write access through account membership
+
+```bash cURL
+curl -X DELETE https://api.kortix.ai/threads/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+```python Python SDK
+from kortix import Kortix
+
+client = Kortix(api_key="YOUR_API_KEY")
+
+result = client.threads.delete(
+    thread_id="550e8400-e29b-41d4-a716-446655440000"
+)
+
+print(result.message)
+```
+
+```javascript JavaScript SDK
+import { Kortix } from 'kortix';
+
+const client = new Kortix({
+  apiKey: 'YOUR_API_KEY'
+});
+
+const result = await client.threads.delete({
+  threadId: '550e8400-e29b-41d4-a716-446655440000'
+});
+
+console.log(result.message);
+```
+
+## Response
+
+<ResponseField name="message" type="string" required>
+  Confirmation message
+</ResponseField>
+
+<ResponseField name="thread_id" type="string" required>
+  The ID of the deleted thread
+</ResponseField>
+
+### Response Example
+
+```json
+{
+  "message": "Thread deleted successfully",
+  "thread_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+## Deletion Process
+
+The endpoint performs the following operations in order:
+
+### 1. Thread Data Deletion
+
+- Deletes all agent runs associated with the thread
+- Deletes all messages in the thread
+- Deletes the thread record itself
+
+### 2. Vector Store Cleanup
+
+Removes thread embeddings from the semantic search vector store (non-blocking, logs warning if fails).
+
+### 3. Cache Invalidation
+
+- Decrements thread count in slot manager (Redis cache)
+- Invalidates runtime thread count cache
+- Invalidates account state cache for billing
+
+### 4. Project Cleanup (Conditional)
+
+If this was the last thread in the project:
+
+<Steps>
+  <Step title="Check Remaining Threads">
+    Queries if any other threads exist in the project
+  </Step>
+  
+  <Step title="Delete Sandbox">
+    If a sandbox exists for the project:
+    - Retrieves sandbox resource information
+    - Calls sandbox deletion API
+    - Logs any errors (non-blocking)
+  </Step>
+  
+  <Step title="Delete Project">
+    Removes the project record from the database
+  </Step>
+  
+  <Step title="Update Counters">
+    - Decrements project count in slot manager
+    - Invalidates project cache
+  </Step>
+</Steps>
+
+If other threads remain in the project, the project is preserved.
+
+## Error Responses
+
+<Expandable title="404 - Not Found">
+
+```json
+{
+  "detail": "Thread not found"
+}
+```
+
+The thread doesn't exist in the database.
+
+</Expandable>
+
+<Expandable title="403 - Forbidden">
+
+Returned when the authenticated user doesn't have write access to the thread.
+
+</Expandable>
+
+<Expandable title="401 - Unauthorized">
+
+Returned when authentication fails or token is invalid.
+
+</Expandable>
+
+<Expandable title="500 - Internal Server Error">
+
+```json
+{
+  "detail": "Failed to delete thread: <error message>"
+}
+```
+
+Possible causes:
+- Database operation failed
+- Sandbox deletion failed (project cleanup continues)
+
+</Expandable>
+
+## Implementation Notes
+
+### Cascade Deletion
+
+The following data is deleted when a thread is removed:
+
+- **Agent Runs**: All execution runs for the thread
+- **Messages**: All messages (user, assistant, tool, etc.)
+- **Thread Embeddings**: Vector embeddings for semantic search
+- **Thread Record**: The thread database entry
+
+### Conditional Project Deletion
+
+Projects are only deleted when:
+1. The thread being deleted is the last thread in the project
+2. The project has no other references
+
+This prevents accidental deletion of shared projects.
+
+### Sandbox Cleanup
+
+Sandbox deletion is attempted but errors are logged and don't block the thread deletion. This ensures threads can be deleted even if sandbox cleanup fails.
+
+### Cache Management
+
+Multiple cache systems are updated:
+- **Slot Manager**: Real-time Redis counters for limits
+- **Runtime Cache**: Legacy caching system (backward compatibility)
+- **Account State Cache**: Billing and quota information
+
+All cache operations are non-blocking and failures are caught to ensure deletion succeeds.
+
+## Source Reference
+
+Implementation: `/workspace/source/backend/core/threads/api.py:960`  
+Repository functions:
+- `delete_thread_data`: `/workspace/source/backend/core/threads/repo.py:137`
+- `count_project_threads`: `/workspace/source/backend/core/threads/repo.py:158`
+- `delete_project`: `/workspace/source/backend/core/threads/repo.py:164`

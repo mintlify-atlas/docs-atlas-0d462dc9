@@ -1,0 +1,439 @@
+---
+title: Tools
+description: Understanding the tool system that extends agent capabilities
+---
+
+## Overview
+
+Tools are the building blocks that give agents the ability to interact with external systems, execute code, search the web, and perform specialized tasks. The platform provides a flexible tool system that supports both built-in tools and external integrations via MCP (Model Context Protocol).
+
+## Tool Architecture
+
+### Base Tool Class
+
+All tools inherit from the `Tool` base class which provides schema registration and result handling:
+
+```python
+# backend/core/agentpress/tool.py:82-150
+class Tool(ABC):
+    """Abstract base class for all tools."""
+    
+    def __init__(self):
+        self._schemas: Dict[str, List[ToolSchema]] = {}
+        self._metadata: Optional[ToolMetadata] = None
+        self._method_metadata: Dict[str, MethodMetadata] = {}
+        self._register_metadata()
+        self._register_schemas()
+    
+    def get_schemas(self) -> Dict[str, List[ToolSchema]]:
+        """Get all registered tool schemas."""
+        return self._schemas
+    
+    def success_response(self, data: Any) -> ToolResult:
+        """Create a successful result."""
+        return ToolResult(success=True, output=data)
+    
+    def fail_response(self, message: str) -> ToolResult:
+        """Create a failed result."""
+        return ToolResult(success=False, output=message)
+```
+
+Reference: `backend/core/agentpress/tool.py:82-150`
+
+### Tool Schemas
+
+Tools define their interface using OpenAPI-compatible schemas:
+
+```python
+@dataclass
+class ToolSchema:
+    schema_type: SchemaType  # OPENAPI
+    schema: Dict[str, Any]   # OpenAPI function definition
+```
+
+Reference: `backend/core/agentpress/tool.py:24-32`
+
+### Tool Metadata
+
+Tools include rich metadata for discovery and UI rendering:
+
+```python
+@dataclass
+class ToolMetadata:
+    display_name: str        # Human-readable name
+    description: str         # Short description
+    icon: Optional[str]      # Icon identifier
+    color: Optional[str]     # UI color class
+    is_core: bool           # Core tool (always enabled)
+    weight: int             # Sort order
+    visible: bool           # Show in UI
+    usage_guide: Optional[str]  # Detailed usage docs
+```
+
+Reference: `backend/core/agentpress/tool.py:45-65`
+
+## Tool Categories
+
+The platform organizes tools into logical categories:
+
+### Core Tools
+
+Essential tools for agent communication and task management:
+
+```python
+CORE_TOOLS = [
+    ('expand_msg_tool', 'core.tools.expand_msg_tool', 'ExpandMessageTool'),
+    ('message_tool', 'core.tools.message_tool', 'MessageTool'),
+    ('task_list_tool', 'core.tools.task_list_tool', 'TaskListTool'),
+    ('sb_git_sync', 'core.tools.sb_git_sync', 'SandboxGitTool'),
+]
+```
+
+Reference: `backend/core/tools/tool_registry.py:4-9`
+
+### Sandbox Tools
+
+Tools for interacting with the sandboxed environment:
+
+```python
+SANDBOX_TOOLS = [
+    ('sb_shell_tool', 'core.tools.sb_shell_tool', 'SandboxShellTool'),
+    ('sb_files_tool', 'core.tools.sb_files_tool', 'SandboxFilesTool'),
+    ('sb_file_reader_tool', 'core.tools.sb_file_reader_tool', 'SandboxFileReaderTool'),
+    ('sb_vision_tool', 'core.tools.sb_vision_tool', 'SandboxVisionTool'),
+    ('sb_kb_tool', 'core.tools.sb_kb_tool', 'SandboxKbTool'),
+    ('sb_presentation_tool', 'core.tools.sb_presentation_tool', 'SandboxPresentationTool'),
+    # ... and more
+]
+```
+
+Reference: `backend/core/tools/tool_registry.py:11-24`
+
+### Search Tools
+
+Tools for finding information on the web and in databases:
+
+```python
+SEARCH_TOOLS = [
+    ('web_search_tool', 'core.tools.web_search_tool', 'SandboxWebSearchTool'),
+    ('image_search_tool', 'core.tools.image_search_tool', 'SandboxImageSearchTool'),
+    ('people_search_tool', 'core.tools.people_search_tool', 'PeopleSearchTool'),
+    ('company_search_tool', 'core.tools.company_search_tool', 'CompanySearchTool'),
+    ('paper_search_tool', 'core.tools.paper_search_tool', 'PaperSearchTool'),
+]
+```
+
+Reference: `backend/core/tools/tool_registry.py:26-32`
+
+### Utility Tools
+
+Specialized tools for specific use cases:
+
+```python
+UTILITY_TOOLS = [
+    ('browser_tool', 'core.tools.browser_tool', 'BrowserTool'),
+    ('vapi_voice_tool', 'core.tools.vapi_voice_tool', 'VapiVoiceTool'),
+    ('reality_defender_tool', 'core.tools.reality_defender_tool', 'RealityDefenderTool'),
+    ('apify_tool', 'core.tools.apify_tool', 'ApifyTool'),
+    ('composio_upload_tool', 'core.tools.composio_upload_tool', 'ComposioUploadTool'),
+]
+```
+
+Reference: `backend/core/tools/tool_registry.py:34-40`
+
+### Agent Builder Tools
+
+Tools for creating and configuring agents:
+
+```python
+AGENT_BUILDER_TOOLS = [
+    ('agent_config_tool', 'core.tools.agent_builder_tools.agent_config_tool', 'AgentConfigTool'),
+    ('agent_creation_tool', 'core.tools.agent_creation_tool', 'AgentCreationTool'),
+    ('mcp_search_tool', 'core.tools.agent_builder_tools.mcp_search_tool', 'MCPSearchTool'),
+    ('credential_profile_tool', 'core.tools.agent_builder_tools.credential_profile_tool', 'CredentialProfileTool'),
+    ('trigger_tool', 'core.tools.agent_builder_tools.trigger_tool', 'TriggerTool'),
+]
+```
+
+Reference: `backend/core/tools/tool_registry.py:42-48`
+
+## Just-In-Time (JIT) Tool Loading
+
+The platform uses JIT loading to minimize startup time and memory usage. Tools are only loaded when first needed.
+
+### JIT Loader
+
+```python
+# backend/core/jit/loader.py:13-109
+class JITLoader:
+    @staticmethod
+    async def activate_tool(
+        tool_name: str, 
+        thread_manager, 
+        project_id: Optional[str] = None,
+        jit_config: Optional[JITConfig] = None
+    ) -> ActivationResult:
+        # 1. Validate against config (if provided)
+        if jit_config:
+            is_valid, error_msg = jit_config.validate_activation_request(tool_name)
+            if not is_valid:
+                return ActivationError(message=error_msg)
+        
+        # 2. Get tool info from registry
+        tool_info = get_tool_info(tool_name)
+        if not tool_info:
+            return ActivationError(message="Tool not found")
+        
+        # 3. Import the tool class
+        tool_class = get_tool_class(module_path, class_name)
+        
+        # 4. Detect required parameters
+        detector = ParameterDetector()
+        init_params = detector.detect_init_parameters(tool_class)
+        kwargs = detector.build_kwargs(init_params, thread_manager, project_id)
+        
+        # 5. Activate the tool
+        thread_manager.add_tool(tool_class, **kwargs)
+        
+        return ActivationSuccess(tool_name=tool_name)
+```
+
+Reference: `backend/core/jit/loader.py:42-109`
+
+### Core Tools
+
+Some tools are always loaded at startup:
+
+```python
+@staticmethod
+def get_core_tools() -> List[str]:
+    return [
+        'expand_msg_tool',
+        'message_tool',
+        'task_list_tool',
+        'sb_shell_tool',
+        'sb_files_tool',
+        'sb_file_reader_tool',
+        # ... more core tools
+    ]
+```
+
+Reference: `backend/core/jit/loader.py:22-40`
+
+### Dependency Resolution
+
+JIT loading automatically handles tool dependencies:
+
+```python
+# Auto-load dependencies
+resolution = resolver.resolve_loading_order(tool_names, allowed_tools)
+sorted_tools = resolution['order']  # Topologically sorted
+dependencies = resolution['dependencies']  # Auto-included deps
+skipped = resolution['skipped']  # Blocked by config
+```
+
+Reference: `backend/core/jit/loader.py:119-149`
+
+## Tool Execution
+
+### Tool Results
+
+All tools return standardized `ToolResult` objects:
+
+```python
+@dataclass
+class ToolResult:
+    success: bool
+    output: Any  # Can be dict, list, or string
+```
+
+Reference: `backend/core/agentpress/tool.py:35-43`
+
+### Error Handling
+
+Tools should handle errors gracefully:
+
+```python
+async def execute(self, **kwargs) -> ToolResult:
+    try:
+        result = await self._do_work(**kwargs)
+        return self.success_response(result)
+    except Exception as e:
+        logger.error(f"Tool execution failed: {e}")
+        return self.fail_response(str(e))
+```
+
+## MCP Tool Integration
+
+The platform supports external tools via Model Context Protocol (MCP). See [MCP Concepts](/concepts/mcp) for details.
+
+### MCP Tool Wrapper
+
+MCP tools are wrapped to provide a consistent interface:
+
+```python
+class MCPToolWrapper:
+    """Wraps MCP tools to match AgentPress tool interface."""
+    
+    async def execute(self, tool_name: str, args: Dict[str, Any]) -> ToolResult:
+        # Route to appropriate MCP server
+        # Execute the tool
+        # Return standardized result
+```
+
+Reference: `backend/core/tools/mcp_tool_wrapper.py`
+
+## Tool Registry
+
+The tool registry manages all available tools:
+
+```python
+def get_all_tools() -> Dict[str, Type[Tool]]:
+    """Get all registered tools."""
+    tools_map = {}
+    for tool_name, module_path, class_name in ALL_TOOLS:
+        try:
+            tools_map[tool_name] = get_tool_class(module_path, class_name)
+        except (ImportError, AttributeError) as e:
+            logger.debug(f"Skipping tool {tool_name}: {e}")
+    return tools_map
+```
+
+Reference: `backend/core/tools/tool_registry.py:59-68`
+
+### Tool Discovery
+
+```python
+# Get tool by name
+tool_info = get_tool_info('web_search_tool')
+# Returns: ('web_search_tool', 'core.tools.web_search_tool', 'SandboxWebSearchTool')
+
+# Get tools by category
+tools_by_category = get_tools_by_category()
+# Returns: {'core': [...], 'sandbox': [...], 'search': [...], ...}
+
+# Get tool metadata
+metadata = get_tool_metadata_summary('web_search_tool')
+# Returns: {'display_name': 'Web Search', 'description': '...'}
+```
+
+Reference: `backend/core/tools/tool_registry.py:71-137`
+
+## Tool Configuration
+
+Agents configure which tools are available:
+
+```json
+{
+  "agentpress_tools": {
+    "sb_shell_tool": {
+      "enabled": true
+    },
+    "web_search_tool": {
+      "enabled": true,
+      "max_results": 10
+    },
+    "sb_files_tool": {
+      "enabled": true,
+      "max_file_size_mb": 50
+    }
+  }
+}
+```
+
+### JIT Configuration
+
+JIT loading can be restricted by configuration:
+
+```python
+jit_config = JITConfig(
+    allowed_tools=['web_search_tool', 'sb_shell_tool'],
+    blocked_tools=['dangerous_tool'],
+    auto_load_dependencies=True
+)
+```
+
+Reference: `backend/core/jit/config.py`
+
+## Tool Output Streaming
+
+Tools can stream their output in real-time:
+
+```python
+from core.utils.tool_output_streaming import stream_tool_output
+
+async def execute(self, query: str) -> ToolResult:
+    await stream_tool_output({
+        "type": "tool_output",
+        "tool_name": "web_search",
+        "status": "searching",
+        "progress": "Fetching results..."
+    })
+    
+    results = await self._search(query)
+    
+    await stream_tool_output({
+        "type": "tool_output",
+        "tool_name": "web_search",
+        "status": "complete",
+        "result_count": len(results)
+    })
+    
+    return self.success_response(results)
+```
+
+## Performance Considerations
+
+### Lazy Loading
+
+Tools are imported only when needed:
+
+```python
+# NOT loaded at startup
+import importlib
+module = importlib.import_module('core.tools.web_search_tool')
+ToolClass = getattr(module, 'SandboxWebSearchTool')
+```
+
+### Caching
+
+Tool schemas are cached to avoid repeated generation:
+
+```python
+thread_manager.tool_registry.invalidate_schema_cache()  # Refresh cache
+thread_manager.tool_registry.invalidate_function_cache()  # Refresh function list
+```
+
+Reference: `backend/core/jit/loader.py:92`
+
+### Parameter Detection
+
+The JIT loader automatically detects required initialization parameters:
+
+```python
+detector = ParameterDetector()
+init_params = detector.detect_init_parameters(tool_class)
+# Automatically detects: thread_manager, project_id, etc.
+
+kwargs = detector.build_kwargs(init_params, thread_manager, project_id)
+# Builds: {'thread_manager': <obj>, 'project_id': '...'}
+```
+
+Reference: `backend/core/jit/loader.py:85-87`
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    Learn about agents that use tools
+  </Card>
+  <Card title="MCP" icon="plug" href="/concepts/mcp">
+    Explore external tool integrations via MCP
+  </Card>
+  <Card title="Sandboxes" icon="box" href="/concepts/sandboxes">
+    Understand where sandbox tools execute
+  </Card>
+  <Card title="Threads" icon="messages" href="/concepts/threads">
+    See how tools are used in conversations
+  </Card>
+</CardGroup>

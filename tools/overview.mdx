@@ -1,0 +1,254 @@
+---
+title: 'Tools & Extensions Overview'
+description: 'Comprehensive overview of the Kortix tool system architecture and capabilities'
+---
+
+## Introduction
+
+Kortix features a powerful and extensible tool system that enables AI agents to interact with external services, execute commands, manipulate files, and integrate with third-party platforms. The tool system is built on a modular architecture that supports three types of tools:
+
+1. **Built-in Tools** - Core tools that ship with Kortix
+2. **MCP Integrations** - Tools from Model Context Protocol servers
+3. **Custom Tools** - User-defined tools for specific workflows
+
+## Architecture
+
+### Core Components
+
+The tool system is built on several key components defined in `core/agentpress/tool.py`:
+
+#### Tool Base Class
+
+All tools inherit from the abstract `Tool` base class:
+
+```python
+class Tool(ABC):
+    """Abstract base class for all tools.
+    
+    Provides the foundation for implementing tools with schema registration
+    and result handling capabilities.
+    """
+    
+    def __init__(self):
+        self._schemas: Dict[str, List[ToolSchema]] = {}
+        self._metadata: Optional[ToolMetadata] = None
+        self._method_metadata: Dict[str, MethodMetadata] = {}
+        self._register_metadata()
+        self._register_schemas()
+```
+
+#### Tool Schema Types
+
+Tools use OpenAPI schemas to define their interface:
+
+```python
+class SchemaType(Enum):
+    OPENAPI = "openapi"
+
+@dataclass
+class ToolSchema:
+    schema_type: SchemaType
+    schema: Dict[str, Any]
+```
+
+#### Tool Results
+
+All tool executions return a standardized `ToolResult`:
+
+```python
+@dataclass
+class ToolResult:
+    """Container for tool execution results.
+    
+    Attributes:
+        success (bool): Whether the tool execution succeeded
+        output (Any): Output data (can be dict, list, or string)
+    """
+    success: bool
+    output: Any
+```
+
+### Tool Metadata System
+
+Kortix uses decorators to attach metadata to tools and methods:
+
+#### Tool-Level Metadata
+
+```python
+@tool_metadata(
+    display_name="WebSearch",
+    description="Search the web and use the results to inform responses",
+    icon="Search",
+    color="bg-green-100 dark:bg-green-800/50",
+    weight=30,
+    visible=True,
+    usage_guide="""Detailed usage instructions..."""
+)
+class SandboxWebSearchTool(Tool):
+    pass
+```
+
+Metadata attributes:
+- `display_name` - Human-readable tool name
+- `description` - Short tool description
+- `icon` - UI icon identifier
+- `color` - UI color styling
+- `is_core` - Whether tool is always enabled
+- `weight` - Sort priority (lower = higher priority)
+- `visible` - Whether shown in UI
+- `usage_guide` - Detailed documentation loaded on-demand
+
+#### Method-Level Metadata
+
+```python
+@method_metadata(
+    display_name="Execute Command",
+    description="Execute bash commands in workspace",
+    is_core=False,
+    visible=True
+)
+@openapi_schema({...})
+async def execute_command(self, command: str) -> ToolResult:
+    pass
+```
+
+### Tool Registry
+
+The `tool_registry.py` module organizes all built-in tools into categories:
+
+```python
+CORE_TOOLS = [
+    ('expand_msg_tool', 'core.tools.expand_msg_tool', 'ExpandMessageTool'),
+    ('message_tool', 'core.tools.message_tool', 'MessageTool'),
+    ('task_list_tool', 'core.tools.task_list_tool', 'TaskListTool'),
+    ('sb_git_sync', 'core.tools.sb_git_sync', 'SandboxGitTool'),
+]
+
+SANDBOX_TOOLS = [
+    ('sb_shell_tool', 'core.tools.sb_shell_tool', 'SandboxShellTool'),
+    ('sb_files_tool', 'core.tools.sb_files_tool', 'SandboxFilesTool'),
+    # ... more sandbox tools
+]
+
+SEARCH_TOOLS = [
+    ('web_search_tool', 'core.tools.web_search_tool', 'SandboxWebSearchTool'),
+    ('image_search_tool', 'core.tools.image_search_tool', 'SandboxImageSearchTool'),
+    # ... more search tools
+]
+```
+
+## Tool Categories
+
+### Core Tools
+Essential tools for agent communication and task management:
+- Message Tool - User communication
+- Task List Tool - Task tracking
+- Expand Message Tool - Message expansion
+- Git Sync Tool - Git operations
+
+### Sandbox Tools
+Tools for interacting with the execution environment:
+- Shell Tool - Execute bash commands
+- Files Tool - File operations (create, edit, delete)
+- File Reader Tool - Read file contents
+- Vision Tool - Image analysis
+- Canvas Tool - Visual canvas operations
+- Spreadsheet Tool - Spreadsheet manipulation
+- Presentation Tool - Presentation creation
+
+### Search Tools
+Tools for information retrieval:
+- Web Search Tool - Search the internet
+- Image Search Tool - Find images
+- People Search Tool - Search for people
+- Company Search Tool - Company information
+- Paper Search Tool - Academic papers
+
+### Utility Tools
+Specialized utility tools:
+- Browser Tool - Web scraping and browsing
+- Vapi Voice Tool - Voice interactions
+- Reality Defender Tool - Deepfake detection
+- Apify Tool - Web automation
+- Composio Upload Tool - File uploads for Composio
+
+### Agent Builder Tools
+Tools for creating and managing agents:
+- Agent Config Tool - Configure agents
+- Agent Creation Tool - Create new agents
+- MCP Search Tool - Search MCP servers
+- Credential Profile Tool - Manage credentials
+- Trigger Tool - Configure triggers
+
+## Just-In-Time (JIT) Loading
+
+Kortix uses a JIT loading system to optimize tool initialization:
+
+```python
+from core.jit import JITLoader, get_jit_loader
+
+# Tools are loaded on-demand when first called
+loader = get_jit_loader()
+result = await loader.activate_tool('web_search', thread_manager)
+```
+
+Benefits:
+- Faster agent startup times
+- Reduced memory footprint
+- Dynamic tool discovery
+- Automatic dependency resolution
+
+## Tool Execution Flow
+
+1. **Tool Call** - Agent decides to use a tool based on available schemas
+2. **JIT Activation** - Tool is loaded if not already active
+3. **Schema Validation** - Parameters validated against OpenAPI schema
+4. **Execution** - Tool method executed with validated parameters
+5. **Result** - `ToolResult` returned with success status and output
+
+## Helper Methods
+
+The `Tool` base class provides convenient response methods:
+
+```python
+def success_response(self, data: Union[Dict, str, list]) -> ToolResult:
+    """Create a successful tool result."""
+    if isinstance(data, (dict, list)):
+        output = json.dumps(data)
+    else:
+        output = str(data)
+    return ToolResult(success=True, output=output)
+
+def fail_response(self, msg: str) -> ToolResult:
+    """Create a failed tool result."""
+    return ToolResult(success=False, output=msg)
+```
+
+## Best Practices
+
+### Creating Tools
+1. Always inherit from `Tool` base class
+2. Use `@tool_metadata` decorator with comprehensive information
+3. Define methods with `@openapi_schema` decorator
+4. Return `ToolResult` from all tool methods
+5. Include detailed `usage_guide` for complex tools
+
+### Schema Design
+1. Use clear, descriptive parameter names
+2. Provide detailed descriptions for each parameter
+3. Mark required vs optional parameters explicitly
+4. Set appropriate parameter types and constraints
+5. Include examples in descriptions
+
+### Error Handling
+1. Always catch exceptions and return `fail_response`
+2. Provide informative error messages
+3. Log errors for debugging
+4. Validate inputs before processing
+
+## Next Steps
+
+- [Built-in Tools](/tools/built-in-tools) - Explore all built-in tools
+- [MCP Integration](/tools/mcp-integration) - Connect external MCP servers
+- [Custom Tools](/tools/custom-tools) - Create your own tools
+- [Composio Integration](/tools/composio) - Integrate with Composio platform

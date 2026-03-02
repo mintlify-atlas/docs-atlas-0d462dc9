@@ -1,0 +1,217 @@
+---
+title: "List Agent Tools"
+description: "Retrieve all enabled tools for an agent, including AgentPress tools and MCP tools"
+---
+
+## Endpoint
+
+```
+GET /agents/{agent_id}/tools
+```
+
+Retrieves all tools enabled for a specific agent, including both AgentPress native tools and MCP (Model Context Protocol) tools from configured servers.
+
+## Authentication
+
+Requires JWT authentication via the `Authorization` header.
+
+## Path Parameters
+
+<ParamField path="agent_id" type="string" required>
+  The unique identifier of the agent
+</ParamField>
+
+## Response
+
+Returns a JSON object containing two arrays:
+
+<ResponseField name="agentpress_tools" type="array">
+  Array of AgentPress native tools configured for the agent
+  
+  <Expandable title="Tool Object">
+    <ResponseField name="name" type="string">
+      The tool name (e.g., `sb_shell_tool`, `web_search_tool`, `browser_tool`)
+    </ResponseField>
+    
+    <ResponseField name="enabled" type="boolean">
+      Whether the tool is enabled for this agent
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="mcp_tools" type="array">
+  Array of MCP tools from connected servers (Composio, custom MCPs)
+  
+  <Expandable title="MCP Tool Object">
+    <ResponseField name="name" type="string">
+      The tool name from the MCP server (e.g., `GMAIL_SEND_EMAIL`, `SLACK_SEND_MESSAGE`)
+    </ResponseField>
+    
+    <ResponseField name="server" type="string">
+      The MCP server name this tool belongs to
+    </ResponseField>
+    
+    <ResponseField name="enabled" type="boolean">
+      Whether the tool is enabled (always true for listed tools)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Available AgentPress Tools
+
+The system includes several categories of native tools:
+
+### Core Tools
+- `expand_msg_tool` - Expand message context
+- `message_tool` - Send messages to users
+- `task_list_tool` - Manage task lists
+- `sb_git_sync` - Git synchronization
+
+### Sandbox Tools
+- `sb_shell_tool` - Execute shell commands
+- `sb_files_tool` - File operations
+- `sb_file_reader_tool` - Read file contents
+- `sb_expose_tool` - Expose sandbox URLs
+- `sb_vision_tool` - Image analysis
+- `sb_image_edit_tool` - Image editing
+- `sb_kb_tool` - Knowledge base access
+- `sb_presentation_tool` - Create presentations
+- `sb_canvas_tool` - Canvas operations
+- `sb_spreadsheet_tool` - Spreadsheet operations
+- `sb_upload_file_tool` - File uploads
+
+### Search Tools
+- `web_search_tool` - Web search
+- `image_search_tool` - Image search
+- `people_search_tool` - People search
+- `company_search_tool` - Company search
+- `paper_search_tool` - Academic paper search
+
+### Utility Tools
+- `browser_tool` - Browser automation
+- `vapi_voice_tool` - Voice generation
+- `reality_defender_tool` - Content verification
+- `apify_tool` - Web scraping
+- `composio_upload_tool` - Upload files to Composio
+
+### Agent Builder Tools
+- `agent_config_tool` - Agent configuration
+- `agent_creation_tool` - Create new agents
+- `mcp_search_tool` - Search MCP integrations
+- `credential_profile_tool` - Manage credentials
+- `trigger_tool` - Configure triggers
+
+## Example Request
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.kortix.ai/agents/agt_abc123/tools" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+```typescript TypeScript SDK
+import { KortixClient } from '@kortix/client';
+
+const client = new KortixClient({
+  apiKey: 'YOUR_API_KEY'
+});
+
+const tools = await client.agents.tools.list('agt_abc123');
+
+console.log('AgentPress tools:', tools.agentpress_tools);
+console.log('MCP tools:', tools.mcp_tools);
+```
+
+```python Python SDK
+from kortix import KortixClient
+
+client = KortixClient(api_key="YOUR_API_KEY")
+
+tools = client.agents.tools.list("agt_abc123")
+
+print(f"AgentPress tools: {tools.agentpress_tools}")
+print(f"MCP tools: {tools.mcp_tools}")
+```
+</CodeGroup>
+
+## Example Response
+
+```json
+{
+  "agentpress_tools": [
+    {
+      "name": "sb_shell_tool",
+      "enabled": true
+    },
+    {
+      "name": "sb_files_tool",
+      "enabled": true
+    },
+    {
+      "name": "web_search_tool",
+      "enabled": true
+    },
+    {
+      "name": "browser_tool",
+      "enabled": false
+    }
+  ],
+  "mcp_tools": [
+    {
+      "name": "GMAIL_SEND_EMAIL",
+      "server": "Gmail",
+      "enabled": true
+    },
+    {
+      "name": "SLACK_SEND_MESSAGE",
+      "server": "Slack",
+      "enabled": true
+    },
+    {
+      "name": "GITHUB_CREATE_ISSUE",
+      "server": "GitHub",
+      "enabled": true
+    }
+  ]
+}
+```
+
+## Error Responses
+
+<ResponseField name="404" type="error">
+  Worker not found - The agent does not exist or you don't have access
+  
+  ```json
+  {
+    "detail": "Worker not found"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="403" type="error">
+  Access denied - You don't own this agent and it's not public
+  
+  ```json
+  {
+    "detail": "Access denied"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="401" type="error">
+  Unauthorized - Invalid or missing authentication token
+  
+  ```json
+  {
+    "detail": "Not authenticated"
+  }
+  ```
+</ResponseField>
+
+## Notes
+
+- Tools are configured per agent version. The response reflects the current active version.
+- MCP tools are dynamically loaded from configured integrations (Composio profiles, custom MCP servers).
+- Only enabled tools appear in the response for MCP tools.
+- AgentPress tools show their enabled state explicitly, including disabled tools.
+- Tool metadata and schemas can be fetched separately if needed for UI rendering.

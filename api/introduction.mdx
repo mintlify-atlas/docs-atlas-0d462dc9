@@ -1,0 +1,250 @@
+---
+title: 'API Introduction'
+description: 'Overview of the Kortix API, base URLs, versioning, and rate limits'
+---
+
+## Welcome to the Kortix API
+
+The Kortix API provides a RESTful interface for building AI-powered applications. Access agent execution, thread management, file uploads, and more through a unified API.
+
+## Base URLs
+
+Kortix provides different base URLs depending on your environment:
+
+<CodeGroup>
+```bash Production
+https://api.kortix.com/v1
+```
+
+```bash Staging
+https://staging-api.kortix.com/v1
+```
+
+```bash Local Development
+http://localhost:8000/v1
+```
+</CodeGroup>
+
+All API requests must be made to the `/v1` prefix. For example:
+
+```bash
+curl https://api.kortix.com/v1/health
+```
+
+## API Architecture
+
+The Kortix API is built with:
+
+- **FastAPI Framework**: High-performance async Python API
+- **PostgreSQL Database**: Powered by Supabase with real-time capabilities
+- **Redis Caching**: For authentication, rate limiting, and performance optimization
+- **CloudWatch Metrics**: System monitoring and logging (production)
+
+### Key Features
+
+- **Multi-tenancy**: Account-based resource isolation
+- **Real-time Streaming**: Server-Sent Events (SSE) for agent runs
+- **File Uploads**: Support for multiple file types with validation
+- **Webhook Integration**: Trigger-based automation
+- **Sandbox Execution**: Isolated code execution environments
+
+## Rate Limits
+
+The API implements several rate limiting mechanisms to ensure fair usage:
+
+### Concurrent Request Limits
+
+<ParamField path="max_concurrent_ips" type="integer" default="25">
+  Maximum concurrent IP addresses allowed per instance
+</ParamField>
+
+Source: `api.py:69`
+
+```python
+MAX_CONCURRENT_IPS = 25
+```
+
+### API Key Usage Throttling
+
+API key `last_used_at` timestamps are throttled to reduce database load:
+
+<ParamField path="API_KEY_LAST_USED_THROTTLE_SECONDS" type="integer" default="900">
+  Minimum seconds between last_used_at updates (default: 15 minutes)
+</ParamField>
+
+Source: `core/services/api_keys.py:447-448`
+
+### Billing-Based Limits
+
+Rate limits vary by subscription tier:
+
+- **Free Tier**: Limited concurrent runs
+- **Paid Tiers**: Higher concurrency and priority execution
+- **Enterprise**: Custom limits
+
+Limits are enforced at the account level and checked before agent execution.
+
+## Request Format
+
+All requests must include proper authentication headers:
+
+<CodeGroup>
+```bash API Key
+curl https://api.kortix.com/v1/agents \
+  -H "X-API-Key: pk_xxxxx:sk_xxxxx"
+```
+
+```bash JWT Token
+curl https://api.kortix.com/v1/agents \
+  -H "Authorization: Bearer eyJhbGc..."
+```
+</CodeGroup>
+
+### Content Types
+
+The API accepts and returns JSON by default:
+
+```bash
+Content-Type: application/json
+Accept: application/json
+```
+
+For file uploads, use `multipart/form-data`:
+
+```bash
+Content-Type: multipart/form-data
+```
+
+## Response Format
+
+All responses follow a consistent structure:
+
+<ResponseField name="status" type="string">
+  HTTP status indicator (e.g., "ok", "error")
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Response payload containing requested data
+</ResponseField>
+
+<ResponseField name="timestamp" type="string">
+  ISO 8601 timestamp of the response
+</ResponseField>
+
+### Success Response Example
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-03-02T10:30:00.000Z",
+  "instance_id": "worker-abc123"
+}
+```
+
+See [Errors](/api/errors) for error response format.
+
+## Health Check
+
+Monitor API health and status:
+
+<CodeGroup>
+```bash Standard Health Check
+curl https://api.kortix.com/v1/health
+```
+
+```bash Docker Health Check
+curl https://api.kortix.com/v1/health-docker
+```
+
+```bash Redis Health Check
+curl https://api.kortix.com/v1/debug/redis
+```
+</CodeGroup>
+
+### Health Response
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-03-02T10:30:00.000Z",
+  "instance_id": "i-abc123xyz"
+}
+```
+
+Source: `api.py:444-465`
+
+### Graceful Shutdown
+
+During deployment, the health check returns `503` when shutting down:
+
+```json
+{
+  "status": "shutting_down",
+  "timestamp": "2026-03-02T10:30:00.000Z",
+  "instance_id": "i-abc123xyz"
+}
+```
+
+This ensures Kubernetes stops routing traffic before terminating the pod.
+
+Source: `api.py:450-459`
+
+## System Metrics
+
+Access real-time system metrics:
+
+```bash
+curl https://api.kortix.com/v1/metrics
+```
+
+<ResponseField name="active_agent_runs" type="integer">
+  Total active agent runs across all instances
+</ResponseField>
+
+<ResponseField name="active_redis_streams" type="integer">
+  Number of active Redis stream keys
+</ResponseField>
+
+<ResponseField name="orphaned_streams" type="integer">
+  Streams without database records (should be 0)
+</ResponseField>
+
+Source: `api.py:480-496`
+
+## CORS Configuration
+
+The API supports cross-origin requests from:
+
+- `https://www.kortix.com`
+- `https://kortix.com`
+- `https://dev.kortix.com`
+- `https://staging.kortix.com`
+- `https://*.kortix.com` (all subdomains)
+- `https://*-kortixai.vercel.app` (Vercel preview deployments)
+- `http://localhost:3000` (local development)
+
+Source: `api.py:331-358`
+
+### Allowed Methods
+
+```
+GET, POST, PUT, PATCH, DELETE, OPTIONS
+```
+
+### Allowed Headers
+
+```
+Content-Type, Authorization, X-Project-Id, X-MCP-URL, 
+X-MCP-Type, X-MCP-Headers, X-API-Key
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn how to authenticate with API keys and JWT tokens
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/api/errors">
+    Understand error responses and status codes
+  </Card>
+</CardGroup>

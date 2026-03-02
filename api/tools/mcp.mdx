@@ -1,0 +1,629 @@
+---
+title: "MCP Tools"
+description: "Manage MCP (Model Context Protocol) tools and custom integrations for agents"
+---
+
+## Overview
+
+MCP (Model Context Protocol) tools allow agents to connect to external services through standardized protocols. Kortix supports multiple MCP server types:
+
+- **Composio**: Pre-built integrations (Gmail, Slack, GitHub, etc.)
+- **Custom HTTP**: Custom MCP servers over HTTP
+- **Custom SSE**: Custom MCP servers using Server-Sent Events
+- **Custom JSON/stdio**: Local MCP servers via stdin/stdout
+
+## Get Agent Custom MCP Tools
+
+```
+GET /agents/{agent_id}/custom-mcp-tools
+```
+
+Discover available tools from a custom MCP server for a specific agent.
+
+### Authentication
+
+Requires JWT authentication via the `Authorization` header.
+
+### Path Parameters
+
+<ParamField path="agent_id" type="string" required>
+  The unique identifier of the agent
+</ParamField>
+
+### Headers
+
+<ParamField header="X-MCP-URL" type="string" required>
+  The URL of the MCP server (for HTTP/SSE) or Composio profile ID
+</ParamField>
+
+<ParamField header="X-MCP-Type" type="string" default="sse">
+  The MCP server type: `http`, `sse`, or `composio`
+</ParamField>
+
+<ParamField header="X-MCP-Headers" type="string">
+  Optional JSON string of custom headers for the MCP server
+</ParamField>
+
+### Response
+
+<ResponseField name="tools" type="array">
+  Array of discovered tools from the MCP server
+  
+  <Expandable title="Tool Object">
+    <ResponseField name="name" type="string">
+      Tool name (e.g., `GMAIL_SEND_EMAIL`)
+    </ResponseField>
+    
+    <ResponseField name="description" type="string">
+      Tool description from the MCP server
+    </ResponseField>
+    
+    <ResponseField name="enabled" type="boolean">
+      Whether this tool is currently enabled for the agent
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="has_mcp_config" type="boolean">
+  Whether this MCP server is already configured for the agent
+</ResponseField>
+
+<ResponseField name="server_type" type="string">
+  The type of MCP server (http, sse, composio)
+</ResponseField>
+
+<ResponseField name="server_url" type="string">
+  The MCP server URL or identifier
+</ResponseField>
+
+### Example Request
+
+<CodeGroup>
+```bash cURL
+curl -X GET "https://api.kortix.ai/agents/agt_abc123/custom-mcp-tools" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "X-MCP-URL: https://mcp.example.com" \
+  -H "X-MCP-Type: http"
+```
+
+```typescript TypeScript SDK
+import { KortixClient } from '@kortix/client';
+
+const client = new KortixClient({
+  apiKey: 'YOUR_API_KEY'
+});
+
+const tools = await client.agents.tools.discoverMcp('agt_abc123', {
+  url: 'https://mcp.example.com',
+  type: 'http'
+});
+
+console.log('Available tools:', tools.tools);
+```
+
+```python Python SDK
+from kortix import KortixClient
+
+client = KortixClient(api_key="YOUR_API_KEY")
+
+tools = client.agents.tools.discover_mcp(
+    "agt_abc123",
+    url="https://mcp.example.com",
+    type="http"
+)
+
+print(f"Available tools: {tools['tools']}")
+```
+</CodeGroup>
+
+### Example Response
+
+```json
+{
+  "tools": [
+    {
+      "name": "search_database",
+      "description": "Search the product database",
+      "enabled": false
+    },
+    {
+      "name": "create_order",
+      "description": "Create a new order",
+      "enabled": true
+    },
+    {
+      "name": "get_inventory",
+      "description": "Get current inventory levels",
+      "enabled": false
+    }
+  ],
+  "has_mcp_config": true,
+  "server_type": "http",
+  "server_url": "https://mcp.example.com"
+}
+```
+
+## Update Agent Custom MCP Tools
+
+```
+POST /agents/{agent_id}/custom-mcp-tools
+```
+
+Enable or disable specific tools from a custom MCP server.
+
+### Authentication
+
+Requires JWT authentication.
+
+### Path Parameters
+
+<ParamField path="agent_id" type="string" required>
+  The unique identifier of the agent
+</ParamField>
+
+### Request Body
+
+<ParamField body="url" type="string" required>
+  The MCP server URL or Composio profile ID
+</ParamField>
+
+<ParamField body="type" type="string" default="sse">
+  The MCP server type: `http`, `sse`, or `composio`
+</ParamField>
+
+<ParamField body="enabled_tools" type="array" required>
+  Array of tool names to enable
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+<ResponseField name="enabled_tools" type="array">
+  Array of tool names that are now enabled
+</ResponseField>
+
+<ResponseField name="total_tools" type="integer">
+  Total number of enabled tools
+</ResponseField>
+
+### Example Request
+
+<CodeGroup>
+```bash cURL
+curl -X POST "https://api.kortix.ai/agents/agt_abc123/custom-mcp-tools" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://mcp.example.com",
+    "type": "http",
+    "enabled_tools": ["search_database", "create_order"]
+  }'
+```
+
+```typescript TypeScript SDK
+const result = await client.agents.tools.updateMcpTools('agt_abc123', {
+  url: 'https://mcp.example.com',
+  type: 'http',
+  enabled_tools: ['search_database', 'create_order']
+});
+
+console.log('Enabled tools:', result.enabled_tools);
+```
+
+```python Python SDK
+result = client.agents.tools.update_mcp_tools(
+    "agt_abc123",
+    url="https://mcp.example.com",
+    type="http",
+    enabled_tools=["search_database", "create_order"]
+)
+
+print(f"Enabled {result['total_tools']} tools")
+```
+</CodeGroup>
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "enabled_tools": ["search_database", "create_order"],
+  "total_tools": 2
+}
+```
+
+## Update Agent Custom MCPs
+
+```
+PUT /agents/{agent_id}/custom-mcp-tools
+```
+
+Update the complete list of custom MCP configurations for an agent.
+
+### Authentication
+
+Requires JWT authentication.
+
+### Path Parameters
+
+<ParamField path="agent_id" type="string" required>
+  The unique identifier of the agent
+</ParamField>
+
+### Request Body
+
+<ParamField body="custom_mcps" type="array" required>
+  Array of MCP configuration objects
+  
+  <Expandable title="MCP Configuration Object">
+    <ParamField body="name" type="string" required>
+      Display name for the MCP integration
+    </ParamField>
+    
+    <ParamField body="type" type="string" required>
+      MCP type: `http`, `sse`, `composio`, or `json`
+    </ParamField>
+    
+    <ParamField body="customType" type="string">
+      Custom type identifier (for non-Composio MCPs)
+    </ParamField>
+    
+    <ParamField body="config" type="object" required>
+      Configuration object (varies by type)
+      
+      <Expandable title="HTTP/SSE Config">
+        <ParamField body="url" type="string" required>
+          MCP server URL
+        </ParamField>
+        
+        <ParamField body="headers" type="object">
+          Optional custom headers
+        </ParamField>
+      </Expandable>
+      
+      <Expandable title="Composio Config">
+        <ParamField body="profile_id" type="string" required>
+          Composio profile identifier
+        </ParamField>
+      </Expandable>
+      
+      <Expandable title="JSON/stdio Config">
+        <ParamField body="command" type="string" required>
+          Command to execute
+        </ParamField>
+        
+        <ParamField body="args" type="array">
+          Command arguments
+        </ParamField>
+        
+        <ParamField body="env" type="object">
+          Environment variables
+        </ParamField>
+      </Expandable>
+    </ParamField>
+    
+    <ParamField body="enabledTools" type="array" required>
+      Array of tool names to enable from this MCP server
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  <ResponseField name="custom_mcps" type="array">
+    The updated list of MCP configurations
+  </ResponseField>
+  
+  <ResponseField name="total_enabled_tools" type="integer">
+    Total number of enabled tools across all MCPs
+  </ResponseField>
+</ResponseField>
+
+### Example Request
+
+<CodeGroup>
+```bash cURL
+curl -X PUT "https://api.kortix.ai/agents/agt_abc123/custom-mcp-tools" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "custom_mcps": [
+      {
+        "name": "Custom HTTP MCP",
+        "type": "http",
+        "customType": "http",
+        "config": {
+          "url": "https://mcp.example.com"
+        },
+        "enabledTools": ["search_database", "create_order"]
+      },
+      {
+        "name": "Gmail",
+        "type": "composio",
+        "config": {
+          "profile_id": "prof_xyz789"
+        },
+        "enabledTools": ["GMAIL_SEND_EMAIL", "GMAIL_CREATE_DRAFT"]
+      }
+    ]
+  }'
+```
+
+```typescript TypeScript SDK
+const result = await client.agents.tools.updateCustomMcps('agt_abc123', {
+  custom_mcps: [
+    {
+      name: 'Custom HTTP MCP',
+      type: 'http',
+      customType: 'http',
+      config: {
+        url: 'https://mcp.example.com'
+      },
+      enabledTools: ['search_database', 'create_order']
+    },
+    {
+      name: 'Gmail',
+      type: 'composio',
+      config: {
+        profile_id: 'prof_xyz789'
+      },
+      enabledTools: ['GMAIL_SEND_EMAIL', 'GMAIL_CREATE_DRAFT']
+    }
+  ]
+});
+```
+
+```python Python SDK
+result = client.agents.tools.update_custom_mcps(
+    "agt_abc123",
+    custom_mcps=[
+        {
+            "name": "Custom HTTP MCP",
+            "type": "http",
+            "customType": "http",
+            "config": {
+                "url": "https://mcp.example.com"
+            },
+            "enabledTools": ["search_database", "create_order"]
+        },
+        {
+            "name": "Gmail",
+            "type": "composio",
+            "config": {
+                "profile_id": "prof_xyz789"
+            },
+            "enabledTools": ["GMAIL_SEND_EMAIL", "GMAIL_CREATE_DRAFT"]
+        }
+    ]
+)
+```
+</CodeGroup>
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "custom_mcps": [
+      {
+        "name": "Custom HTTP MCP",
+        "type": "http",
+        "customType": "http",
+        "config": {
+          "url": "https://mcp.example.com"
+        },
+        "enabledTools": ["search_database", "create_order"]
+      },
+      {
+        "name": "Gmail",
+        "type": "composio",
+        "config": {
+          "profile_id": "prof_xyz789"
+        },
+        "enabledTools": ["GMAIL_SEND_EMAIL", "GMAIL_CREATE_DRAFT"]
+      }
+    ],
+    "total_enabled_tools": 4
+  }
+}
+```
+
+## MCP Server Types
+
+### HTTP MCP Servers
+
+HTTP-based MCP servers use streamable HTTP for communication:
+
+```json
+{
+  "name": "Custom HTTP MCP",
+  "type": "http",
+  "customType": "http",
+  "config": {
+    "url": "https://mcp.example.com",
+    "headers": {
+      "Authorization": "Bearer token123"
+    }
+  },
+  "enabledTools": ["tool1", "tool2"]
+}
+```
+
+### SSE MCP Servers
+
+Server-Sent Events based MCP servers:
+
+```json
+{
+  "name": "SSE MCP Server",
+  "type": "sse",
+  "customType": "sse",
+  "config": {
+    "url": "https://sse.example.com/events"
+  },
+  "enabledTools": ["realtime_data"]
+}
+```
+
+### Composio Integrations
+
+Pre-built integrations via Composio:
+
+```json
+{
+  "name": "Gmail",
+  "type": "composio",
+  "config": {
+    "profile_id": "prof_xyz789"
+  },
+  "enabledTools": [
+    "GMAIL_SEND_EMAIL",
+    "GMAIL_CREATE_DRAFT",
+    "GMAIL_REPLY_TO_THREAD"
+  ]
+}
+```
+
+### JSON/stdio MCP Servers
+
+Local MCP servers via stdin/stdout:
+
+```json
+{
+  "name": "Local Tool",
+  "type": "json",
+  "customType": "json",
+  "config": {
+    "command": "node",
+    "args": ["/path/to/mcp-server.js"],
+    "env": {
+      "API_KEY": "key123"
+    }
+  },
+  "enabledTools": ["local_action"]
+}
+```
+
+## Error Responses
+
+<ResponseField name="403" type="error">
+  MCP integrations not enabled
+  
+  ```json
+  {
+    "detail": "MCP integrations are not enabled"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="404" type="error">
+  Worker not found
+  
+  ```json
+  {
+    "detail": "Worker not found"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="400" type="error">
+  Invalid request (missing URL, invalid config, etc.)
+  
+  ```json
+  {
+    "detail": "MCP URL is required"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="402" type="error">
+  Custom worker limit exceeded
+  
+  ```json
+  {
+    "detail": {
+      "message": "Maximum of 5 custom workers allowed for your current plan. You have 5 custom workers.",
+      "current_count": 5,
+      "limit": 5,
+      "tier_name": "Pro",
+      "error_code": "CUSTOM_WORKER_LIMIT_EXCEEDED"
+    }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500" type="error">
+  Internal server error
+  
+  ```json
+  {
+    "detail": "Internal server error"
+  }
+  ```
+</ResponseField>
+
+## MCP Tool Execution
+
+MCP tools are executed using ephemeral connections:
+
+1. **Discovery**: Tool schemas are cached in Redis (24-hour TTL)
+2. **Activation**: Tools are activated on first use (JIT loading)
+3. **Execution**: Each call creates a fresh connection to the MCP server
+4. **Result**: Connection is closed immediately after execution
+
+This architecture prevents connection leaks and ensures tools always use fresh credentials.
+
+## Schema Caching
+
+MCP tool schemas are cached for performance:
+
+- **Cache Key**: `mcp_schema:{toolkit_slug}`
+- **TTL**: 24 hours
+- **Storage**: Redis
+- **Invalidation**: Automatic on TTL expiry or manual via registry methods
+
+## Security Considerations
+
+### URL Validation
+
+In production environments, private/local URLs are blocked:
+
+- Localhost addresses (127.0.0.1, ::1)
+- Private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+- Link-local addresses (169.254.0.0/16)
+
+Local development environments bypass these restrictions.
+
+### Authentication
+
+- **Composio**: Authentication handled via profile configuration
+- **Custom MCPs**: Use custom headers for API keys/tokens
+- **Private MCPs**: Deploy behind authentication gateway
+
+## Best Practices
+
+1. **Test MCP servers**: Use the discovery endpoint before enabling tools
+2. **Enable selectively**: Only enable tools your agent needs
+3. **Monitor usage**: Track which tools are being called
+4. **Update regularly**: Keep MCP configurations in sync with server changes
+5. **Handle failures**: MCP servers may be temporarily unavailable
+6. **Cache schemas**: Let the system cache schemas for performance
+7. **Version agents**: Use agent versions when changing MCP configurations
+
+## Rate Limits
+
+MCP tool endpoints respect the following limits:
+
+- **Discovery**: Max 30 seconds timeout per server
+- **Execution**: Max 30 seconds timeout per tool call
+- **Custom MCPs**: Limited by subscription tier (check plan limits)
+- **Connection pool**: Ephemeral connections prevent pool exhaustion

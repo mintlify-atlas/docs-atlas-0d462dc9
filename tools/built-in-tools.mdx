@@ -1,0 +1,420 @@
+---
+title: 'Built-in Tools'
+description: 'Complete reference of all built-in tools available in Kortix'
+---
+
+## Overview
+
+Kortix includes a comprehensive set of built-in tools organized into five categories. Each tool is registered in `core/tools/tool_registry.py` and can be imported and used immediately.
+
+## Core Tools
+
+Essential tools for agent operation and user interaction.
+
+### Message Tool (`message_tool`)
+
+**Class:** `MessageTool`  
+**Module:** `core.tools.message_tool`  
+**Display Name:** AskUser
+
+Communicate with users during execution.
+
+#### Methods
+
+##### `ask`
+Ask questions and communicate with users:
+
+```python
+@openapi_schema({
+    "type": "function",
+    "function": {
+        "name": "ask",
+        "description": "Ask user questions during execution",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Message to user"},
+                "follow_up_answers": {"type": "array", "description": "Clickable options"},
+                "attachments": {"type": "array", "description": "File attachments"}
+            },
+            "required": ["text"]
+        }
+    }
+})
+```
+
+**Usage Guide:** Always include content in the `text` parameter. Never output raw text AND call ask with duplicate content. Use `follow_up_answers` to provide 2-4 actionable options.
+
+##### `complete`
+Signal that all work is finished:
+
+```python
+complete(text: str, attachments: Optional[List] = None)
+```
+
+Only use when ALL tasks are 100% complete with no further user input needed.
+
+### Task List Tool (`task_list_tool`)
+
+**Class:** `TaskListTool`  
+**Module:** `core.tools.task_list_tool`
+
+Manage and track tasks during execution.
+
+#### Methods
+- `create_task` - Create a new task
+- `update_task` - Update task status
+- `list_tasks` - List all tasks
+- `delete_task` - Delete a task
+
+### Expand Message Tool (`expand_msg_tool`)
+
+**Class:** `ExpandMessageTool`  
+**Module:** `core.tools.expand_msg_tool`
+
+Expand truncated or compressed messages.
+
+### Git Sync Tool (`sb_git_sync`)
+
+**Class:** `SandboxGitTool`  
+**Module:** `core.tools.sb_git_sync`
+
+Perform Git operations in the sandbox.
+
+## Sandbox Tools
+
+Tools for interacting with the execution environment.
+
+### Shell Tool (`sb_shell_tool`)
+
+**Class:** `SandboxShellTool`  
+**Module:** `core.tools.sb_shell_tool`  
+**Display Name:** Bash
+
+Execute bash commands in the workspace.
+
+#### Method: `execute_command`
+
+```python
+@openapi_schema({
+    "type": "function",
+    "function": {
+        "name": "execute_command",
+        "description": "Execute bash command with optional timeout",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "Bash command"},
+                "description": {"type": "string", "description": "Command description"},
+                "folder": {"type": "string", "description": "Working directory"},
+                "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 300}
+            },
+            "required": ["command"]
+        }
+    }
+})
+async def execute_command(
+    self,
+    command: str,
+    description: Optional[str] = None,
+    folder: Optional[str] = None,
+    timeout: int = 300
+) -> ToolResult
+```
+
+**Key Features:**
+- Real-time output streaming via PTY
+- Default timeout: 300 seconds (max 600)
+- Working directory persists between commands
+- Supports tmux for long-running processes
+
+**Usage Guide Highlights:**
+- Use for terminal operations (git, npm, docker)
+- DO NOT use for file operations - use specialized tools instead
+- Always quote paths with spaces
+- Chain dependent commands with `&&`
+- For background processes, use tmux
+
+**Example:**
+```python
+# Install dependencies
+result = await shell_tool.execute_command(
+    command="npm install",
+    description="Install project dependencies",
+    timeout=120
+)
+
+# Long-running server
+result = await shell_tool.execute_command(
+    command="tmux new-session -d -s server 'npm run dev'",
+    description="Start development server in background"
+)
+```
+
+### Files Tool (`sb_files_tool`)
+
+**Class:** `SandboxFilesTool`  
+**Module:** `core.tools.sb_files_tool`
+
+Perform file operations (create, edit, delete, list).
+
+#### Key Methods
+- `create_file` - Create new files
+- `edit_file` - Edit existing files
+- `delete_file` - Delete files
+- `list_directory` - List directory contents
+- `move_file` - Move/rename files
+
+### File Reader Tool (`sb_file_reader_tool`)
+
+**Class:** `SandboxFileReaderTool`  
+**Module:** `core.tools.sb_file_reader_tool`
+
+Read file contents with support for large files, pagination, and filtering.
+
+### Vision Tool (`sb_vision_tool`)
+
+**Class:** `SandboxVisionTool`  
+**Module:** `core.tools.sb_vision_tool`
+
+Analyze images using vision AI models.
+
+### Canvas Tool (`sb_canvas_tool`)
+
+**Class:** `SandboxCanvasTool`  
+**Module:** `core.tools.sb_canvas_tool`
+
+Create and manipulate visual canvases.
+
+### Spreadsheet Tool (`sb_spreadsheet_tool`)
+
+**Class:** `SandboxSpreadsheetTool`  
+**Module:** `core.tools.sb_spreadsheet_tool`
+
+Create and manipulate spreadsheets.
+
+### Presentation Tool (`sb_presentation_tool`)
+
+**Class:** `SandboxPresentationTool`  
+**Module:** `core.tools.sb_presentation_tool`
+
+Create presentations programmatically.
+
+### Expose Tool (`sb_expose_tool`)
+
+**Class:** `SandboxExposeTool`  
+**Module:** `core.tools.sb_expose_tool`
+
+Expose local ports for external access.
+
+### Image Edit Tool (`sb_image_edit_tool`)
+
+**Class:** `SandboxImageEditTool`  
+**Module:** `core.tools.sb_image_edit_tool`
+
+Edit and manipulate images.
+
+### Knowledge Base Tool (`sb_kb_tool`)
+
+**Class:** `SandboxKbTool`  
+**Module:** `core.tools.sb_kb_tool`
+
+Query knowledge base for context.
+
+### Upload File Tool (`sb_upload_file_tool`)
+
+**Class:** `SandboxUploadFileTool`  
+**Module:** `core.tools.sb_upload_file_tool`
+
+Handle file uploads to the sandbox.
+
+## Search Tools
+
+Tools for information retrieval and research.
+
+### Web Search Tool (`web_search_tool`)
+
+**Class:** `SandboxWebSearchTool`  
+**Module:** `core.tools.web_search_tool`  
+**Display Name:** WebSearch
+
+Search the web for current information.
+
+#### Methods
+
+##### `web_search`
+Search with single or batch queries:
+
+```python
+web_search(
+    query: Union[str, List[str]],
+    num_results: int = 5,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None
+)
+```
+
+**Best Practices:**
+- ALWAYS batch multiple queries into one call
+- Include current year in queries (2025+)
+- Always cite sources at the end of responses
+
+##### `scrape_webpage`
+Extract content from web pages:
+
+```python
+scrape_webpage(
+    url: str,
+    prompt: Optional[str] = None
+)
+```
+
+Converts HTML to markdown for easier processing.
+
+### Image Search Tool (`image_search_tool`)
+
+**Class:** `SandboxImageSearchTool`  
+**Module:** `core.tools.image_search_tool`
+
+Search for images on the web.
+
+### People Search Tool (`people_search_tool`)
+
+**Class:** `PeopleSearchTool`  
+**Module:** `core.tools.people_search_tool`
+
+Search for people and their information.
+
+### Company Search Tool (`company_search_tool`)
+
+**Class:** `CompanySearchTool`  
+**Module:** `core.tools.company_search_tool`
+
+Retrieve company information and data.
+
+### Paper Search Tool (`paper_search_tool`)
+
+**Class:** `PaperSearchTool`  
+**Module:** `core.tools.paper_search_tool`
+
+Search academic papers and research.
+
+## Utility Tools
+
+Specialized tools for advanced functionality.
+
+### Browser Tool (`browser_tool`)
+
+**Class:** `BrowserTool`  
+**Module:** `core.tools.browser_tool`
+
+Advanced web browsing and scraping capabilities.
+
+### Vapi Voice Tool (`vapi_voice_tool`)
+
+**Class:** `VapiVoiceTool`  
+**Module:** `core.tools.vapi_voice_tool`
+
+Voice interaction capabilities via Vapi.
+
+### Reality Defender Tool (`reality_defender_tool`)
+
+**Class:** `RealityDefenderTool`  
+**Module:** `core.tools.reality_defender_tool`
+
+Detect deepfakes and manipulated media.
+
+### Apify Tool (`apify_tool`)
+
+**Class:** `ApifyTool`  
+**Module:** `core.tools.apify_tool`
+
+Web automation and scraping via Apify platform.
+
+### Composio Upload Tool (`composio_upload_tool`)
+
+**Class:** `ComposioUploadTool`  
+**Module:** `core.tools.composio_upload_tool`
+
+Upload files to Composio storage for use in Gmail attachments and other integrations.
+
+## Agent Builder Tools
+
+Tools for creating and configuring agents.
+
+### Agent Config Tool (`agent_config_tool`)
+
+**Class:** `AgentConfigTool`  
+**Module:** `core.tools.agent_builder_tools.agent_config_tool`
+
+Configure agent settings and parameters.
+
+### Agent Creation Tool (`agent_creation_tool`)
+
+**Class:** `AgentCreationTool`  
+**Module:** `core.tools.agent_creation_tool`
+
+Create new agents programmatically.
+
+### MCP Search Tool (`mcp_search_tool`)
+
+**Class:** `MCPSearchTool`  
+**Module:** `core.tools.agent_builder_tools.mcp_search_tool`
+
+Search and discover MCP servers.
+
+### Credential Profile Tool (`credential_profile_tool`)
+
+**Class:** `CredentialProfileTool`  
+**Module:** `core.tools.agent_builder_tools.credential_profile_tool`
+
+Manage credential profiles for integrations.
+
+### Trigger Tool (`trigger_tool`)
+
+**Class:** `TriggerTool`  
+**Module:** `core.tools.agent_builder_tools.trigger_tool`
+
+Configure event triggers for agents.
+
+## Accessing Tools
+
+### From Tool Registry
+
+```python
+from core.tools.tool_registry import get_all_tools, get_tool_class
+
+# Get all available tools
+tools_map = get_all_tools()
+
+# Get specific tool class
+tool_class = get_tool_class('core.tools.sb_shell_tool', 'SandboxShellTool')
+tool_instance = tool_class(project_id, thread_manager)
+```
+
+### By Category
+
+```python
+from core.tools.tool_registry import get_tools_by_category
+
+categorized = get_tools_by_category()
+core_tools = categorized['core']
+sandbox_tools = categorized['sandbox']
+search_tools = categorized['search']
+```
+
+### Tool Metadata
+
+```python
+from core.tools.tool_registry import get_tool_metadata_summary
+
+metadata = get_tool_metadata_summary('web_search_tool')
+print(metadata['display_name'])  # "WebSearch"
+print(metadata['description'])   # Tool description
+```
+
+## Next Steps
+
+- [MCP Integration](/tools/mcp-integration) - Connect external tools
+- [Custom Tools](/tools/custom-tools) - Create your own tools
+- [Tool System Overview](/tools/overview) - Architecture details

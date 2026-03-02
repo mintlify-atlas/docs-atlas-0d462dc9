@@ -1,0 +1,356 @@
+---
+title: "Register Tools"
+description: "Register and configure tools for agents, including tool schemas and metadata"
+---
+
+## Overview
+
+Kortix uses a tool registry system to manage available tools for agents. Tools are registered automatically at system initialization and can be accessed through the agent configuration.
+
+## Tool Registration Architecture
+
+The tool registration system operates at two levels:
+
+### 1. Native AgentPress Tools
+
+Native tools are registered in the `ToolRegistry` class and available system-wide. They are defined in Python and inherit from the `Tool` base class.
+
+#### Tool Categories
+
+Tools are organized into categories in `tool_registry.py`:
+
+```python
+CORE_TOOLS = [
+    ('expand_msg_tool', 'core.tools.expand_msg_tool', 'ExpandMessageTool'),
+    ('message_tool', 'core.tools.message_tool', 'MessageTool'),
+    ('task_list_tool', 'core.tools.task_list_tool', 'TaskListTool'),
+    ('sb_git_sync', 'core.tools.sb_git_sync', 'SandboxGitTool'),
+]
+
+SANDBOX_TOOLS = [
+    ('sb_shell_tool', 'core.tools.sb_shell_tool', 'SandboxShellTool'),
+    ('sb_files_tool', 'core.tools.sb_files_tool', 'SandboxFilesTool'),
+    # ... more tools
+]
+
+SEARCH_TOOLS = [
+    ('web_search_tool', 'core.tools.web_search_tool', 'SandboxWebSearchTool'),
+    ('image_search_tool', 'core.tools.image_search_tool', 'SandboxImageSearchTool'),
+    # ... more tools
+]
+
+UTILITY_TOOLS = [
+    ('browser_tool', 'core.tools.browser_tool', 'BrowserTool'),
+    ('vapi_voice_tool', 'core.tools.vapi_voice_tool', 'VapiVoiceTool'),
+    # ... more tools
+]
+
+AGENT_BUILDER_TOOLS = [
+    ('agent_config_tool', 'core.tools.agent_builder_tools.agent_config_tool', 'AgentConfigTool'),
+    ('agent_creation_tool', 'core.tools.agent_creation_tool', 'AgentCreationTool'),
+    # ... more tools
+]
+```
+
+#### Tool Class Structure
+
+Each tool is implemented as a Python class:
+
+```python
+from core.agentpress.tool import Tool, ToolResult, tool_metadata, method_metadata
+from core.agentpress.schema import openapi_schema, param
+
+@tool_metadata(
+    display_name="Example Tool",
+    description="A sample tool for demonstration",
+    icon="wrench",
+    is_core=False,
+    visible=True
+)
+class ExampleTool(Tool):
+    @openapi_schema(
+        name="example_action",
+        description="Performs an example action"
+    )
+    @param("input_text", "string", "Text to process", required=True)
+    @param("mode", "string", "Processing mode", enum=["fast", "accurate"])
+    async def example_action(
+        self,
+        input_text: str,
+        mode: str = "fast"
+    ) -> ToolResult:
+        """Process the input text."""
+        try:
+            result = f"Processed: {input_text} (mode: {mode})"
+            return self.success_response(result)
+        except Exception as e:
+            return self.fail_response(f"Error: {str(e)}")
+```
+
+### 2. MCP (Model Context Protocol) Tools
+
+MCP tools are registered from external servers (Composio, custom MCPs) and managed through the `MCPRegistry`.
+
+#### MCP Tool Registration Flow
+
+1. **Discovery**: Connect to MCP server and list available tools
+2. **Registration**: Register tool metadata in `MCPRegistry`
+3. **Activation**: Load tool schemas on-demand (JIT - Just In Time)
+4. **Execution**: Create ephemeral connection for each tool call
+
+#### MCP Tool Info Structure
+
+```python
+@dataclass
+class MCPToolInfo:
+    tool_name: str                    # e.g., "GMAIL_SEND_EMAIL"
+    toolkit_slug: str                 # e.g., "gmail", "slack"
+    mcp_config: Dict[str, Any]        # Server configuration
+    status: MCPToolStatus             # DISCOVERED, ACTIVE, FAILED, etc.
+    schema: Optional[Dict[str, Any]]  # OpenAPI schema (cached)
+    instance: Optional[Any]           # Tool instance (when activated)
+```
+
+## Tool Registration Methods
+
+### Register Native Tool
+
+```python
+from core.agentpress.tool_registry import ToolRegistry
+from core.tools.my_tool import MyTool
+
+registry = ToolRegistry()
+registry.register_tool(MyTool)
+
+# Register specific methods only
+registry.register_tool(MyTool, function_names=['method1', 'method2'])
+
+# Register with initialization arguments
+registry.register_tool(MyTool, api_key="key123")
+```
+
+### Register MCP Tool
+
+```python
+from core.agentpress.mcp_registry import get_mcp_registry, MCPToolInfo, MCPToolStatus
+
+mcp_registry = get_mcp_registry()
+
+tool_info = MCPToolInfo(
+    tool_name="CUSTOM_TOOL",
+    toolkit_slug="custom_server",
+    mcp_config={
+        "type": "http",
+        "config": {
+            "url": "https://mcp.example.com"
+        },
+        "enabledTools": ["CUSTOM_TOOL"]
+    },
+    status=MCPToolStatus.DISCOVERED
+)
+
+mcp_registry.register_tool_info(tool_info)
+```
+
+## Tool Schema Format
+
+All tools expose OpenAPI-compatible schemas:
+
+```json
+{
+  "type": "function",
+  "function": {
+    "name": "tool_name",
+    "description": "What the tool does",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "param1": {
+          "type": "string",
+          "description": "Parameter description"
+        },
+        "param2": {
+          "type": "number",
+          "description": "Another parameter",
+          "enum": [1, 2, 3]
+        }
+      },
+      "required": ["param1"]
+    }
+  }
+}
+```
+
+## Tool Discovery
+
+### Get All Tool Summaries
+
+```python
+from core.tools.tool_registry import get_all_tool_summaries
+
+summaries = get_all_tool_summaries()
+# Returns: Dict[tool_name, {display_name, description}]
+```
+
+### Get Tool by Category
+
+```python
+from core.tools.tool_registry import get_tools_by_category
+
+tools = get_tools_by_category()
+# Returns:
+# {
+#   'core': [...],
+#   'sandbox': [...],
+#   'search': [...],
+#   'utility': [...],
+#   'agent_builder': [...]
+# }
+```
+
+### Get Tool Metadata
+
+```python
+from core.tools.tool_registry import get_tool_metadata_summary
+
+metadata = get_tool_metadata_summary('web_search_tool')
+# Returns: {display_name: '...', description: '...'}
+```
+
+### Get Tool Usage Guide
+
+```python
+from core.tools.tool_registry import get_tool_usage_guide
+
+guide = get_tool_usage_guide('browser_tool')
+# Returns detailed usage instructions if available
+```
+
+## Runtime Tool Access
+
+### Get Available Functions
+
+```python
+registry = ToolRegistry()
+functions = registry.get_available_functions()
+# Returns: Dict[function_name, callable]
+
+# Call a tool function
+result = await functions['web_search_tool'](query="AI news")
+```
+
+### Get Tool Schemas
+
+```python
+# Get OpenAPI schemas for LLM
+schemas = registry.get_openapi_schemas()
+
+# Get all schemas (including MCP tools)
+all_schemas = registry.get_all_schemas()
+```
+
+## MCP Schema Caching
+
+MCP tool schemas are cached in Redis for performance:
+
+```python
+from core.agentpress.mcp_registry import get_mcp_registry
+
+mcp_registry = get_mcp_registry()
+
+# Pre-warm schema cache
+warmed_count = await mcp_registry.prewarm_schemas(account_id="user123")
+
+# Get discovery info (loads schemas if needed)
+discovery = await mcp_registry.get_discovery_info(
+    filter_pattern="GMAIL",  # Optional filter
+    load_schemas=True,        # Fetch schemas from servers
+    account_id="user123"
+)
+```
+
+## Tool Metadata Decorators
+
+### @tool_metadata
+
+Defines tool-level metadata:
+
+```python
+@tool_metadata(
+    display_name="Human Readable Name",
+    description="Brief description",
+    icon="icon-name",
+    color="color-class",
+    is_core=False,
+    weight=100,
+    visible=True,
+    usage_guide="Detailed usage instructions..."
+)
+class MyTool(Tool):
+    pass
+```
+
+### @openapi_schema
+
+Defines method schemas for LLM consumption:
+
+```python
+@openapi_schema(
+    name="method_name",
+    description="What this method does"
+)
+@param("arg1", "string", "Argument description", required=True)
+@param("arg2", "integer", "Optional argument", default=10)
+async def method_name(self, arg1: str, arg2: int = 10) -> ToolResult:
+    pass
+```
+
+## Cache Invalidation
+
+```python
+# Invalidate schema cache
+registry.invalidate_schema_cache()
+
+# Invalidate function cache
+registry.invalidate_function_cache()
+
+# Invalidate MCP cache
+registry.invalidate_mcp_cache()
+```
+
+## Best Practices
+
+1. **Use descriptive names**: Tool and method names should be clear and descriptive
+2. **Provide detailed descriptions**: Help the LLM understand when to use each tool
+3. **Mark core tools appropriately**: Core tools are always enabled
+4. **Set appropriate weights**: Lower weights appear first in tool lists
+5. **Cache tool instances**: Reuse tool instances when possible for performance
+6. **Handle errors gracefully**: Always return `ToolResult` with success/failure status
+7. **Document parameters**: Use `@param` decorator for all parameters
+8. **Keep schemas updated**: Invalidate caches when tools change
+
+## Performance Considerations
+
+- Tool schemas are cached after first registration
+- OpenAPI schemas are cached and reused across requests
+- MCP schemas are cached in Redis with 24-hour TTL
+- Tool instances are cached when registered without kwargs
+- Function lookups use cached dictionaries for fast access
+
+## Error Handling
+
+All tool methods should return `ToolResult`:
+
+```python
+# Success
+return self.success_response("Operation completed")
+
+# Failure
+return self.fail_response("Error message")
+
+# With structured data
+return self.success_response({
+    "status": "complete",
+    "data": [...]
+})
+```

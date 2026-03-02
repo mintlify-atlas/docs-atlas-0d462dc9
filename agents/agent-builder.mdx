@@ -1,0 +1,366 @@
+---
+title: Agent Builder UI
+description: Configure and customize your agents using Kortix's visual agent builder interface
+---
+
+The Agent Builder provides a comprehensive interface for configuring every aspect of your AI agents, from system prompts to integrations.
+
+## Accessing the Agent Builder
+
+Navigate to an agent's configuration page:
+
+1. Go to **Agents** in the sidebar
+2. Click on any agent card
+3. Click **Configure** or navigate to `/agents/config/{agent_id}`
+
+## Configuration Sections
+
+### Basic Settings
+
+<Tabs>
+  <Tab title="Name & Icon">
+    Customize your agent's visual identity:
+    
+    **Agent Name**
+    - Click the agent name to edit
+    - Name appears in the UI and API responses
+    - Best practice: Use descriptive, role-based names (e.g., "Sales Assistant", "Code Reviewer")
+    
+    **Icon & Colors**
+    
+    Click the icon to customize:
+    - **Icon**: Choose from Lucide icon library
+    - **Icon Color**: Foreground color for the icon
+    - **Background Color**: Background color of the icon container
+    
+    ```tsx
+    // Example: Generate icon programmatically
+    const result = await generateAgentIcon({ name: "Data Analyst" });
+    // Returns: { icon_name: "chart-bar", icon_color: "#3B82F6", icon_background: "#EFF6FF" }
+    ```
+  </Tab>
+  
+  <Tab title="Default Agent">
+    Set an agent as the default for new conversations:
+    
+    - Toggle **Set as default** in the agent configuration
+    - Default agents are used automatically when starting new threads
+    - Only one agent can be default at a time
+    
+    <Note>
+    The system automatically clears the default flag from other agents when setting a new default.
+    </Note>
+  </Tab>
+  
+  <Tab title="Model Selection">
+    Choose the AI model powering your agent:
+    
+    **Available Models**
+    - `kortix/basic` - Claude 4.5 Sonnet (default for Pro+ users)
+    - `kortix/minimax` - Fast, efficient model (default for Free tier)
+    - `anthropic/claude-4.5-sonnet` - Latest Claude model
+    - `openai/gpt-4o` - OpenAI's most capable model
+    - `openai/o3-mini` - Fast reasoning model
+    
+    **Model Selection via API**
+    ```python
+    requests.put(
+        f"https://api.kortix.com/agents/{agent_id}",
+        json={"model": "anthropic/claude-4.5-sonnet"},
+        headers=headers
+    )
+    ```
+    
+    <Warning>
+    Model availability depends on your subscription tier. Attempting to use unavailable models returns a `402 MODEL_ACCESS_DENIED` error.
+    </Warning>
+  </Tab>
+</Tabs>
+
+### System Prompt Configuration
+
+The system prompt defines your agent's behavior, personality, and capabilities. See [System Prompts](/agents/system-prompts) for detailed guidance.
+
+**Quick Access**
+- Click **Edit System Prompt** in the agent builder
+- Use markdown formatting for structured instructions
+- Test changes immediately by starting a conversation
+
+### Tool Configuration
+
+<Tabs>
+  <Tab title="AgentPress Tools">
+    Built-in tools that are always available:
+    
+    **Core Tools** (Always enabled)
+    - `message_tool`: Communication with users (ask, complete)
+    - `task_tool`: Task management and planning
+    
+    **File Operations**
+    - `sb_files_tool`: Create, edit, and delete files
+    - `sb_file_reader_tool`: Read and search file contents
+    
+    **Execution & Research**
+    - `sb_shell_tool`: Execute terminal commands
+    - `web_search_tool`: Search the internet
+    - `browser_tool`: Navigate and interact with websites
+    
+    **Specialized Tools**
+    - `sb_vision_tool`: Analyze images
+    - `sb_presentation_tool`: Create presentations
+    - `sb_canvas_tool`: Design and visual tools
+    - `people_search_tool`: Find information about people
+    - `company_search_tool`: Research companies
+    
+    **Enable/Disable Tools**
+    ```python
+    agentpress_tools = {
+        "sb_files_tool": {"enabled": True},
+        "web_search_tool": {"enabled": True},
+        "browser_tool": {"enabled": False}
+    }
+    
+    requests.put(
+        f"https://api.kortix.com/agents/{agent_id}",
+        json={"agentpress_tools": agentpress_tools},
+        headers=headers
+    )
+    ```
+  </Tab>
+  
+  <Tab title="MCP Integrations">
+    Connect external services using the Model Context Protocol:
+    
+    **Pre-configured MCPs**
+    
+    Available integrations:
+    - Gmail
+    - Google Drive
+    - Slack
+    - GitHub
+    - Linear
+    - Notion
+    - And more...
+    
+    **Add MCP Integration**
+    
+    1. Click **Add Integration** in the Tools section
+    2. Select the service (e.g., Gmail)
+    3. Authenticate if required
+    4. Select which tools to enable
+    
+    **Configure via API**
+    ```python
+    configured_mcps = [
+        {
+            "name": "gmail",
+            "type": "mcp",
+            "enabledTools": [
+                "GMAIL_SEND_EMAIL",
+                "GMAIL_SEARCH_EMAILS"
+            ]
+        }
+    ]
+    
+    requests.put(
+        f"https://api.kortix.com/agents/{agent_id}",
+        json={"configured_mcps": configured_mcps},
+        headers=headers
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Custom MCPs">
+    Connect to your own MCP servers:
+    
+    **Supported Protocols**
+    - SSE (Server-Sent Events)
+    - WebSocket
+    - Composio integrations
+    
+    **Add Custom MCP**
+    
+    <Steps>
+      <Step title="Get Server Details">
+        Obtain your MCP server URL and type:
+        ```bash
+        # Example MCP server
+        https://your-mcp-server.com/api/mcp
+        ```
+      </Step>
+      
+      <Step title="Discover Available Tools">
+        ```python
+        response = requests.get(
+            f"https://api.kortix.com/agents/{agent_id}/custom-mcp-tools",
+            headers={
+                **headers,
+                "X-MCP-URL": "https://your-mcp-server.com/api/mcp",
+                "X-MCP-Type": "sse"
+            }
+        )
+        tools = response.json()["tools"]
+        # [{"name": "custom_tool", "description": "...", "enabled": false}, ...]
+        ```
+      </Step>
+      
+      <Step title="Enable Tools">
+        ```python
+        custom_mcps = [{
+            "name": "My Custom MCP",
+            "customType": "sse",
+            "type": "sse",
+            "config": {
+                "url": "https://your-mcp-server.com/api/mcp"
+            },
+            "enabledTools": ["custom_tool_1", "custom_tool_2"]
+        }]
+        
+        requests.put(
+            f"https://api.kortix.com/agents/{agent_id}",
+            json={"custom_mcps": custom_mcps},
+            headers=headers
+        )
+        ```
+      </Step>
+    </Steps>
+    
+    <Note>
+    Custom MCP limits depend on your subscription tier. Free tier: 0, Pro: 3, Team: 10, Enterprise: Unlimited.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Version Management
+
+Agent configurations are automatically versioned:
+
+### Automatic Versioning
+
+Changes to these fields create new versions:
+- System prompt
+- Model
+- AgentPress tools
+- MCP integrations (configured_mcps, custom_mcps)
+
+Changes to these fields do NOT create versions:
+- Name
+- Icon and colors
+- Default status
+
+### View Version History
+
+```python
+response = requests.get(
+    f"https://api.kortix.com/agents/{agent_id}/versions",
+    headers=headers
+)
+versions = response.json()["versions"]
+
+for version in versions:
+    print(f"v{version['version_number']}: {version['version_name']}")
+    print(f"  Created: {version['created_at']}")
+    print(f"  Model: {version['model']}")
+```
+
+### Switch Between Versions
+
+```python
+# Set active version
+requests.put(
+    f"https://api.kortix.com/agents/{agent_id}/versions/{version_id}/activate",
+    headers=headers
+)
+```
+
+<Warning>
+Switching versions changes the agent's behavior for all new conversations. Existing conversations continue using their original version.
+</Warning>
+
+## Keyboard Shortcuts
+
+Speed up your workflow with keyboard shortcuts:
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd/Ctrl + S` | Save changes |
+| `Cmd/Ctrl + K` | Open command palette |
+| `Esc` | Close dialogs |
+
+## Configuration Best Practices
+
+<AccordionGroup>
+  <Accordion title="Tool Selection Strategy">
+    Enable only the tools your agent needs:
+    
+    - **Start minimal**: Begin with core tools only
+    - **Add iteratively**: Enable tools as you discover needs
+    - **Test thoroughly**: Verify each tool works as expected
+    - **Monitor usage**: Check which tools are actually used
+    
+    Too many tools can:
+    - Slow down agent decision-making
+    - Increase token usage
+    - Create unexpected behaviors
+  </Accordion>
+  
+  <Accordion title="Model Selection">
+    Choose models based on use case:
+    
+    - **Complex reasoning**: `claude-4.5-sonnet`, `gpt-4o`
+    - **Fast responses**: `kortix/minimax`, `o3-mini`
+    - **Vision tasks**: Models with vision support
+    - **Cost optimization**: Balance performance vs. cost
+  </Accordion>
+  
+  <Accordion title="Naming Conventions">
+    Use clear, descriptive names:
+    
+    - **Good**: "Customer Support Agent", "Code Review Bot"
+    - **Bad**: "Agent 1", "My Worker"
+    - Include role or function in the name
+    - Use consistent naming across similar agents
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Agent Not Responding
+
+1. Check that required tools are enabled
+2. Verify MCP integrations are authenticated
+3. Review system prompt for conflicting instructions
+4. Check subscription tier for model access
+
+### Tool Errors
+
+```python
+# Get agent tools and their status
+response = requests.get(
+    f"https://api.kortix.com/agents/{agent_id}/tools",
+    headers=headers
+)
+
+for tool in response.json()["agentpress_tools"]:
+    print(f"{tool['name']}: {'enabled' if tool['enabled'] else 'disabled'}")
+```
+
+### Version Conflicts
+
+If configuration changes aren't reflecting:
+
+1. Verify the current version is active
+2. Check for pending changes
+3. Review version history for recent updates
+4. Clear cache and reload
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="System Prompts" icon="file-lines" href="/agents/system-prompts">
+    Learn to write effective system prompts
+  </Card>
+  <Card title="Workflows & Triggers" icon="diagram-project" href="/agents/workflows">
+    Automate your agents with triggers
+  </Card>
+</CardGroup>

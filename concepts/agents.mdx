@@ -1,0 +1,242 @@
+---
+title: Agents
+description: Understanding the agent architecture and lifecycle in the platform
+---
+
+## Overview
+
+Agents are the core execution units of the platform. Each agent represents a configurable AI assistant with its own personality, capabilities, and tool access. Agents are versioned, allowing you to iterate on configurations while maintaining historical versions.
+
+## Agent Architecture
+
+### Agent Data Model
+
+Agents are represented by the `AgentData` class, which serves as the single source of truth for agent representation:
+
+```python
+# backend/core/agents/agent_loader.py:14
+@dataclass
+class AgentData:
+    # Core fields
+    agent_id: str
+    name: str
+    description: Optional[str]
+    account_id: str
+    is_default: bool
+    is_public: bool
+    
+    # Configuration (from version)
+    system_prompt: Optional[str]
+    model: Optional[str]
+    configured_mcps: Optional[list]
+    custom_mcps: Optional[list]
+    agentpress_tools: Optional[Dict[str, Any]]
+    triggers: Optional[list]
+    
+    # Version info
+    current_version_id: Optional[str]
+    version_count: int
+```
+
+Reference: `backend/core/agents/agent_loader.py:14-57`
+
+### Agent Loading System
+
+The `AgentLoader` provides unified agent loading with consistent behavior:
+
+- **Single agent loads**: Full configuration including system prompt, model, and tools
+- **List operations**: Metadata only for performance (no version loading)
+- **Batch loading**: Efficient version fetching for multiple agents
+
+```python
+# Loading a single agent with full config
+loader = await get_agent_loader()
+agent = await loader.load_agent(
+    agent_id=agent_id,
+    user_id=user_id,
+    load_config=True  # Loads full version config
+)
+```
+
+Reference: `backend/core/agents/agent_loader.py:160-233`
+
+## Agent Execution
+
+### Pipeline Architecture
+
+Agent execution uses a **stateless pipeline** architecture that processes messages through multiple stages:
+
+```python
+# backend/core/agents/runner/executor.py:93-109
+ctx = PipelineContext(
+    agent_run_id=agent_run_id,
+    thread_id=thread_id,
+    project_id=project_id,
+    account_id=account_id,
+    model_name=effective_model,
+    agent_config=agent_config,
+    is_new_thread=is_new_thread,
+    cancellation_event=cancellation_event,
+    stream_key=stream_key,
+    user_message=user_message
+)
+
+coordinator = StatelessCoordinator()
+async for response in coordinator.execute(ctx):
+    # Stream responses back to client
+    await redis.stream_add(stream_key, {"data": json.dumps(response)})
+```
+
+Reference: `backend/core/agents/runner/executor.py:93-159`
+
+### Execution Flow
+
+1. **Initialization**: Load agent configuration and setup execution context
+2. **Message Processing**: Process user message through LLM with available tools
+3. **Tool Execution**: Execute any tool calls requested by the LLM
+4. **Response Streaming**: Stream responses back to client via Redis
+5. **Completion**: Mark run as complete and send notifications
+
+<Tip>
+Agent runs are fully asynchronous and support real-time streaming of responses, tool outputs, and status updates.
+</Tip>
+
+## Agent Versioning
+
+Every agent has versioned configurations, allowing safe iteration:
+
+- **Version snapshots**: Each version captures the complete agent config at that point in time
+- **Current version**: The active version used for new runs
+- **Version history**: Full audit trail of configuration changes
+
+### Configuration Structure
+
+Agent configurations include:
+
+```json
+{
+  "system_prompt": "You are a helpful assistant...",
+  "model": "claude-4.5-sonnet",
+  "tools": {
+    "mcp": ["GITHUB_GITHUB_API_ROOT", "SLACK_CHAT_POST_MESSAGE"],
+    "custom_mcp": ["custom_weather_api"],
+    "agentpress": {
+      "sb_shell_tool": { "enabled": true },
+      "web_search_tool": { "enabled": true }
+    }
+  },
+  "triggers": []
+}
+```
+
+Reference: `backend/core/agents/agent_loader.py:515-541`
+
+## Suna: The Default Agent
+
+The platform includes a special default agent called **Suna**:
+
+- **Centrally managed**: Configuration loaded from static in-memory config
+- **User-specific MCPs**: Each user can add their own MCP integrations to Suna
+- **Fast loading**: Static config is instant, user MCPs are cached
+
+```python
+# Suna config uses hybrid loading strategy
+if agent.is_suna_default:
+    # 1. Load static config from memory (instant)
+    static_config = get_static_suna_config()
+    agent.system_prompt = static_config['system_prompt']
+    agent.model = static_config['model']
+    
+    # 2. Load user-specific MCPs (cached)
+    cached_mcps = await get_cached_user_mcps(agent.agent_id)
+    agent.configured_mcps = cached_mcps.get('configured_mcps', [])
+```
+
+Reference: `backend/core/agents/agent_loader.py:412-495`
+
+## Agent Templates
+
+Templates are pre-configured agent blueprints that users can instantiate:
+
+- **Template marketplace**: Public templates created by other users
+- **Quick setup**: Pre-configured with system prompts, tools, and MCP requirements
+- **Customizable**: Users can fork and modify templates for their needs
+
+Reference: `backend/core/agents/agent_loader.py:257-326`
+
+## Agent CRUD Operations
+
+Agents support full create, read, update, and delete operations:
+
+```python
+# Create a new agent
+agent_id = await agent_service.create_agent(
+    account_id=user_id,
+    name="My Custom Agent",
+    description="Specialized assistant for...",
+    system_prompt="You are...",
+    model="claude-4.5-sonnet"
+)
+
+# Update agent configuration
+await agent_service.update_agent(
+    agent_id=agent_id,
+    user_id=user_id,
+    updates={"system_prompt": "Updated prompt..."}
+)
+```
+
+Reference: `backend/core/agents/agent_crud.py`
+
+## Performance Optimizations
+
+### Caching Strategy
+
+The agent system uses multi-level caching:
+
+1. **Runtime cache**: In-memory cache for frequently accessed agents
+2. **Redis cache**: Distributed cache for agent configs and user MCPs
+3. **Static config**: Suna's static config loaded once at startup
+
+```python
+# Check cache first
+cached = await get_cached_agent_config(agent_id)
+if cached:
+    return self._dict_to_agent_data(cached)
+
+# Load from DB and cache
+agent_data = await self._load_from_database(agent_id)
+await set_cached_agent_config(agent_id, agent_data.to_dict())
+```
+
+Reference: `backend/core/agents/agent_loader.py:198-204`
+
+### Batch Loading
+
+When loading multiple agents (e.g., agent list), the system uses batch queries to minimize database calls:
+
+```python
+agents = await loader.load_agents_list(
+    agent_rows=rows,
+    load_config=False  # Metadata only for list view
+)
+```
+
+Reference: `backend/core/agents/agent_loader.py:235-255`
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Threads" icon="messages" href="/concepts/threads">
+    Learn about conversation threads where agents execute
+  </Card>
+  <Card title="Tools" icon="wrench" href="/concepts/tools">
+    Understand the tool system that extends agent capabilities
+  </Card>
+  <Card title="MCP" icon="plug" href="/concepts/mcp">
+    Explore Model Context Protocol integrations
+  </Card>
+  <Card title="Sandboxes" icon="box" href="/concepts/sandboxes">
+    Understand the isolated execution environments
+  </Card>
+</CardGroup>

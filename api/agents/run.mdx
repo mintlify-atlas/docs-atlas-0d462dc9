@@ -1,0 +1,444 @@
+---
+title: Run Agent
+description: Start an agent run to execute tasks in a thread with optional files and custom configuration
+---
+
+## Endpoint
+
+```
+POST /agent/start
+```
+
+## Authentication
+
+Requires JWT authentication via `Authorization: Bearer <token>` header.
+
+## Description
+
+Starts an agent run to process a user prompt. The agent executes in the context of a thread, which can be new or existing. The API supports file uploads, custom models, optimistic creation, and background sandbox initialization.
+
+**Key Features:**
+- **New or Existing Thread**: Create a new thread or continue in an existing one
+- **File Upload**: Upload files that are processed and added to the sandbox
+- **Optimistic Mode**: Pre-create thread/project IDs on the client for instant UI updates
+- **Streaming**: Real-time progress via Server-Sent Events (SSE)
+- **Billing & Limits**: Automatic credit checks and concurrent run limits
+
+## Request Format
+
+This endpoint uses `multipart/form-data` to support file uploads.
+
+## Request Parameters
+
+<ParamField body="prompt" type="string" required>
+  User message/task for the agent to execute. Required for new threads.
+</ParamField>
+
+<ParamField body="thread_id" type="string">
+  UUID of an existing thread to continue, or a new UUID in optimistic mode.
+</ParamField>
+
+<ParamField body="project_id" type="string">
+  UUID of the project containing the thread. Required in optimistic mode.
+</ParamField>
+
+<ParamField body="agent_id" type="string">
+  UUID of the agent to use. If not provided, uses the user's default agent.
+</ParamField>
+
+<ParamField body="model_name" type="string">
+  Override the agent's default model (e.g., "kortix/basic", "openai/gpt-5-nano-2025-08-07").
+  
+  Model access depends on subscription tier:
+  - Free: `kortix/minimax`
+  - Pro: `kortix/basic`, `openai/gpt-5-nano`, `anthropic/claude-3.5-sonnet`
+  - Enterprise: All models
+</ParamField>
+
+<ParamField body="optimistic" type="string" default="false">
+  Set to `"true"` to enable optimistic mode. Client pre-generates `thread_id` and `project_id` for instant UI updates.
+  
+  When enabled, `thread_id` and `project_id` must be provided as valid UUIDs.
+</ParamField>
+
+<ParamField body="memory_enabled" type="string">
+  Set to `"true"` or `"false"` to enable/disable memory for this run.
+</ParamField>
+
+<ParamField body="mode" type="string">
+  Execution mode (e.g., "code", "chat"). Used for specialized agent behaviors.
+</ParamField>
+
+<ParamField body="files" type="file[]">
+  Array of files to upload. Files are parsed, uploaded to the project's sandbox, and made available to the agent.
+  
+  Supported formats: text files, code files, PDFs, images, etc.
+</ParamField>
+
+## Response
+
+Returns immediately with run metadata. The agent executes in the background.
+
+<ResponseField name="thread_id" type="string">
+  UUID of the thread (new or existing)
+</ResponseField>
+
+<ResponseField name="agent_run_id" type="string">
+  Unique identifier for this agent run (UUID)
+</ResponseField>
+
+<ResponseField name="project_id" type="string">
+  UUID of the project containing the thread
+</ResponseField>
+
+<ResponseField name="sandbox_id" type="string" optional>
+  UUID of the sandbox where files are uploaded. Only returned if files were uploaded or sandbox was created.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Initial run status, always `"running"`
+</ResponseField>
+
+<ResponseField name="timing_breakdown" type="object" optional>
+  Performance timing information (only if `X-Emit-Timing: true` header set by super admin)
+  
+  <Expandable title="Timing Fields">
+    <ResponseField name="setup_ms" type="number">
+      Milliseconds taken for request setup and validation
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Examples
+
+<CodeGroup>
+
+```bash cURL - New Thread
+curl -X POST https://api.kortix.ai/agent/start \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -F "prompt=Write a Python script to analyze CSV files" \
+  -F "agent_id=550e8400-e29b-41d4-a716-446655440000"
+```
+
+```bash cURL - With Files
+curl -X POST https://api.kortix.ai/agent/start \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -F "prompt=Analyze these sales data files" \
+  -F "files=@sales_q1.csv" \
+  -F "files=@sales_q2.csv"
+```
+
+```bash cURL - Existing Thread
+curl -X POST https://api.kortix.ai/agent/start \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -F "thread_id=770fa622-g4bd-63f6-c938-668877662222" \
+  -F "prompt=Now create a visualization of the data"
+```
+
+```python Python SDK - Basic Run
+from kortix import Kortix
+
+client = Kortix(api_key="YOUR_API_KEY")
+
+run = client.agents.run(
+    prompt="Write a Python script to parse JSON files",
+    agent_id="550e8400-e29b-41d4-a716-446655440000"
+)
+
+print(f"Run started: {run.agent_run_id}")
+print(f"Thread: {run.thread_id}")
+print(f"Status: {run.status}")
+
+# Stream progress
+for event in client.agents.stream(run.agent_run_id):
+    if event.type == 'llm_response_chunk':
+        print(event.content, end='', flush=True)
+    elif event.type == 'status':
+        print(f"\nStatus: {event.status}")
+```
+
+```python Python SDK - With Files
+from kortix import Kortix
+
+client = Kortix(api_key="YOUR_API_KEY")
+
+with open('data.csv', 'rb') as f1, open('schema.json', 'rb') as f2:
+    run = client.agents.run(
+        prompt="Analyze this dataset and validate against schema",
+        files=[f1, f2]
+    )
+
+print(f"Files uploaded to sandbox: {run.sandbox_id}")
+```
+
+```typescript TypeScript SDK
+import { Kortix } from '@kortix/sdk';
+import { createReadStream } from 'fs';
+
+const client = new Kortix({ apiKey: 'YOUR_API_KEY' });
+
+const run = await client.agents.run({
+  prompt: 'Refactor this code for better performance',
+  agentId: '550e8400-e29b-41d4-a716-446655440000',
+  modelName: 'openai/gpt-5-nano-2025-08-07',
+});
+
+console.log(`Run started: ${run.agentRunId}`);
+console.log(`Thread: ${run.threadId}`);
+
+// Stream events
+for await (const event of client.agents.stream(run.agentRunId)) {
+  if (event.type === 'status' && event.status === 'completed') {
+    console.log('Run completed!');
+    break;
+  }
+}
+```
+
+```javascript Node.js - Optimistic Mode
+const axios = require('axios');
+const FormData = require('form-data');
+const { v4: uuidv4 } = require('uuid');
+
+// Pre-generate IDs for instant UI update
+const threadId = uuidv4();
+const projectId = uuidv4();
+
+const form = new FormData();
+form.append('prompt', 'Create a React component for a todo list');
+form.append('thread_id', threadId);
+form.append('project_id', projectId);
+form.append('optimistic', 'true');
+
+const response = await axios.post(
+  'https://api.kortix.ai/agent/start',
+  form,
+  {
+    headers: {
+      'Authorization': `Bearer ${process.env.KORTIX_API_KEY}`,
+      ...form.getHeaders(),
+    },
+  }
+);
+
+console.log('Run started:', response.data.agent_run_id);
+console.log('UI already showing thread:', threadId);
+```
+
+</CodeGroup>
+
+### Response Example
+
+```json
+{
+  "thread_id": "770fa622-g4bd-63f6-c938-668877662222",
+  "agent_run_id": "880gb733-h5ce-74g7-d049-779988773333",
+  "project_id": "990hc844-i6df-85h8-e150-880099884444",
+  "sandbox_id": "aa1id955-j7eg-96i9-f261-991100995555",
+  "status": "running"
+}
+```
+
+## Streaming Progress
+
+Agent runs stream real-time events via Server-Sent Events (SSE):
+
+```
+GET /agent-run/{agent_run_id}/stream
+```
+
+See the [Stream Agent Run](/api/agents/stream) documentation for details.
+
+## Error Responses
+
+<ResponseField name="402 Payment Required" type="error">
+  Billing or limit issues
+  
+  **Insufficient Credits:**
+  ```json
+  {
+    "detail": {
+      "message": "Billing check failed: Insufficient credits",
+      "error_code": "INSUFFICIENT_CREDITS"
+    }
+  }
+  ```
+  
+  **Model Access Denied:**
+  ```json
+  {
+    "detail": {
+      "message": "Your current subscription plan does not include access to openai/gpt-5-nano-2025-08-07. Please upgrade your subscription.",
+      "tier_name": "free",
+      "error_code": "MODEL_ACCESS_DENIED"
+    }
+  }
+  ```
+  
+  **Concurrent Run Limit:**
+  ```json
+  {
+    "detail": {
+      "message": "Maximum of 1 concurrent runs. You have 1 running.",
+      "running_thread_ids": ["770fa622-g4bd-63f6-c938-668877662222"],
+      "running_count": 1,
+      "limit": 1,
+      "error_code": "AGENT_RUN_LIMIT_EXCEEDED"
+    }
+  }
+  ```
+  
+  **Thread Limit:**
+  ```json
+  {
+    "detail": {
+      "message": "Maximum of 10 threads allowed.",
+      "current_count": 10,
+      "limit": 10,
+      "error_code": "THREAD_LIMIT_EXCEEDED"
+    }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="400 Bad Request" type="error">
+  Invalid request parameters
+  
+  ```json
+  {
+    "detail": "prompt required when creating new thread"
+  }
+  ```
+  
+  Or optimistic mode validation:
+  ```json
+  {
+    "detail": "thread_id and project_id required for optimistic mode"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="404 Not Found" type="error">
+  Thread not found (when using existing thread)
+  
+  ```json
+  {
+    "detail": "Thread not found"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="401 Unauthorized" type="error">
+  Missing or invalid authentication token
+  
+  ```json
+  {
+    "detail": "Not authenticated"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500 Internal Server Error" type="error">
+  Server error during run startup
+  
+  ```json
+  {
+    "detail": "Failed to start agent: <error details>"
+  }
+  ```
+</ResponseField>
+
+## Optimistic Mode
+
+Optimistic mode allows instant UI updates by pre-generating IDs on the client:
+
+```typescript
+import { v4 as uuidv4 } from 'uuid';
+
+// Client pre-generates IDs
+const threadId = uuidv4();
+const projectId = uuidv4();
+
+// Show in UI immediately
+showThread(threadId, { status: 'creating' });
+
+// Start run with pre-generated IDs
+const run = await client.agents.run({
+  prompt: 'Generate a report',
+  threadId,
+  projectId,
+  optimistic: true,
+});
+
+// UI already showing thread - just update status
+updateThreadStatus(threadId, 'running');
+```
+
+## File Upload Details
+
+**File Processing:**
+1. Files are parsed on the server
+2. Sandbox is created/resolved for the project
+3. Files are uploaded to sandbox storage
+4. Agent can access files via `/workspace` directory
+
+**File Limits:**
+- Maximum file size: Varies by tier
+- Supported formats: Text, code, PDFs, images, documents
+
+**File Accessibility:**
+```python
+# Files are available in the sandbox at /workspace
+run = client.agents.run(
+    prompt="Analyze data.csv and create visualizations",
+    files=[open('data.csv', 'rb')]
+)
+
+# Agent can access the file:
+# - Read: /workspace/data.csv
+# - Process: pandas.read_csv('/workspace/data.csv')
+# - Output: /workspace/output/charts.png
+```
+
+## Concurrent Run Limits
+
+Limits based on subscription tier:
+- **Free**: 1 concurrent run
+- **Pro**: 3 concurrent runs
+- **Enterprise**: 10+ concurrent runs
+
+To check running threads:
+```python
+try:
+    run = client.agents.run(prompt="Task")
+except Exception as e:
+    if 'AGENT_RUN_LIMIT_EXCEEDED' in str(e):
+        # Wait for a run to complete or stop an existing run
+        active_runs = client.agents.list_active()
+        print(f"Active runs: {[r.thread_id for r in active_runs]}")
+```
+
+## Background Execution
+
+The `/agent/start` endpoint returns immediately while the agent executes in the background:
+
+1. **Immediate Response**: Returns `agent_run_id`, `thread_id`, `status: "running"`
+2. **Background Task**: Agent execution runs asynchronously
+3. **Streaming**: Progress streamed via SSE to `/agent-run/{agent_run_id}/stream`
+4. **Completion**: Status updated to `completed`, `failed`, or `stopped`
+
+## Notes
+
+- **Fast Response**: API returns in less than 100ms by using background execution
+- **Sandbox Creation**: Sandboxes are created on-demand; with files (blocking), without files (background)
+- **Cache Warming**: Credits and user context are prewarmed in background
+- **Model Override**: Free tier users requesting `kortix/basic` are auto-downgraded to `kortix/minimax`
+- **Slot Reservation**: Concurrent slot is reserved before execution to enforce limits
+- **Cleanup**: Slots are automatically released on completion, failure, or timeout
+
+## Related Endpoints
+
+- [Stream Agent Run](/api/agents/stream) - Stream real-time progress
+- [Stop Agent Run](/api/agents/stop) - Cancel a running agent
+- [Get Agent Run Status](/api/agents/status) - Check run status
+- [List Agent Runs](/api/agents/list-runs) - View run history

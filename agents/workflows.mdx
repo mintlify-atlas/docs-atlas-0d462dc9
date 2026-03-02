@@ -1,0 +1,588 @@
+---
+title: Workflows & Triggers
+description: Automate your agents with scheduled tasks, webhooks, and event-based triggers
+---
+
+Triggers enable your agents to run automatically based on schedules, webhooks, or external events. Build powerful automation workflows without manual intervention.
+
+## Overview
+
+Kortix supports three types of triggers:
+
+- **Schedule**: Run agents on a recurring schedule (cron-based)
+- **Webhook**: Trigger agents via HTTP requests
+- **Event**: React to external service events (via integrations)
+
+## Trigger Types
+
+<Tabs>
+  <Tab title="Schedule Triggers">
+    Run agents on a regular schedule using cron expressions.
+    
+    **Use Cases**
+    - Daily reports and summaries
+    - Periodic data synchronization
+    - Scheduled monitoring and alerts
+    - Regular backups and maintenance
+    
+    **Configuration**
+    ```json
+    {
+      "provider_id": "schedule",
+      "name": "Daily Sales Report",
+      "config": {
+        "cron": "0 9 * * *",
+        "timezone": "America/New_York",
+        "prompt": "Generate a sales report for yesterday"
+      }
+    }
+    ```
+    
+    **Common Cron Patterns**
+    
+    | Pattern | Description |
+    |---------|-------------|
+    | `0 9 * * *` | Every day at 9:00 AM |
+    | `0 */6 * * *` | Every 6 hours |
+    | `0 9 * * 1` | Every Monday at 9:00 AM |
+    | `0 0 1 * *` | First day of every month |
+    | `*/15 * * * *` | Every 15 minutes |
+  </Tab>
+  
+  <Tab title="Webhook Triggers">
+    Trigger agents via HTTP POST requests.
+    
+    **Use Cases**
+    - Integrate with external systems
+    - Process form submissions
+    - Handle payment notifications
+    - Respond to third-party events
+    
+    **Configuration**
+    ```json
+    {
+      "provider_id": "webhook",
+      "name": "New Customer Webhook",
+      "config": {
+        "prompt_template": "Process new customer: {{customer_name}} ({{customer_email}})"
+      }
+    }
+    ```
+    
+    **Webhook URL Format**
+    ```
+    https://api.kortix.com/triggers/webhook/{trigger_id}
+    ```
+    
+    **Triggering via HTTP**
+    ```bash
+    curl -X POST https://api.kortix.com/triggers/webhook/{trigger_id} \
+      -H "Content-Type: application/json" \
+      -d '{
+        "customer_name": "John Doe",
+        "customer_email": "john@example.com",
+        "plan": "pro"
+      }'
+    ```
+    
+    <Note>
+    Webhook payloads are available to the agent via template variables: `{{variable_name}}`
+    </Note>
+  </Tab>
+  
+  <Tab title="Event Triggers">
+    React to events from integrated services (Gmail, Slack, etc.).
+    
+    **Use Cases**
+    - Process incoming emails
+    - Respond to Slack mentions
+    - Handle GitHub pull requests
+    - React to calendar events
+    
+    **Configuration** (Composio Integration)
+    ```json
+    {
+      "provider_id": "composio",
+      "name": "New Gmail Email",
+      "config": {
+        "trigger_slug": "GMAIL_NEW_EMAIL",
+        "profile_id": "profile-123",
+        "prompt_template": "New email from {{sender}}: {{subject}}"
+      }
+    }
+    ```
+    
+    **Available Event Sources**
+    - Gmail (new emails, labels)
+    - Slack (messages, mentions)
+    - GitHub (PRs, issues, commits)
+    - Calendar (new events, reminders)
+    - Linear (issues, updates)
+    - And more via Composio integration
+  </Tab>
+</Tabs>
+
+## Creating Triggers
+
+### Via API
+
+<CodeGroup>
+```python Schedule Trigger
+import requests
+
+url = "https://api.kortix.com/triggers"
+headers = {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+}
+
+payload = {
+    "agent_id": "agent-123",
+    "provider_id": "schedule",
+    "name": "Daily Standup Reminder",
+    "description": "Send daily standup reminder to team",
+    "config": {
+        "cron": "0 9 * * 1-5",  # Weekdays at 9 AM
+        "timezone": "America/Los_Angeles",
+        "prompt": "Send standup reminder to #engineering"
+    }
+}
+
+response = requests.post(url, json=payload, headers=headers)
+trigger = response.json()
+
+print(f"Created trigger: {trigger['trigger_id']}")
+```
+
+```python Webhook Trigger
+payload = {
+    "agent_id": "agent-123",
+    "provider_id": "webhook",
+    "name": "Support Ticket Webhook",
+    "config": {
+        "prompt_template": """New support ticket created:
+        
+        Customer: {{customer_name}}
+        Email: {{customer_email}}
+        Issue: {{issue_description}}
+        Priority: {{priority}}
+        
+        Please analyze the issue and suggest a solution.
+        """
+    }
+}
+
+response = requests.post(url, json=payload, headers=headers)
+trigger = response.json()
+
+webhook_url = f"https://api.kortix.com/triggers/webhook/{trigger['trigger_id']}"
+print(f"Webhook URL: {webhook_url}")
+```
+
+```python Event Trigger
+payload = {
+    "agent_id": "agent-123",
+    "provider_id": "composio",
+    "name": "Gmail Priority Email Alert",
+    "config": {
+        "trigger_slug": "GMAIL_NEW_EMAIL",
+        "profile_id": "gmail-profile-123",
+        "prompt_template": """New priority email:
+        
+        From: {{sender}}
+        Subject: {{subject}}
+        
+        Please summarize and suggest a response.
+        """,
+        "filters": {
+            "label": "Priority"
+        }
+    }
+}
+
+response = requests.post(url, json=payload, headers=headers)
+```
+</CodeGroup>
+
+### API Response
+
+```json
+{
+  "trigger_id": "trigger-456",
+  "agent_id": "agent-123",
+  "provider_id": "schedule",
+  "trigger_type": "schedule",
+  "name": "Daily Standup Reminder",
+  "description": "Send daily standup reminder to team",
+  "is_active": true,
+  "config": {
+    "cron": "0 9 * * 1-5",
+    "timezone": "America/Los_Angeles",
+    "prompt": "Send standup reminder to #engineering"
+  },
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z"
+}
+```
+
+## Managing Triggers
+
+### List Agent Triggers
+
+```python
+response = requests.get(
+    f"https://api.kortix.com/agents/{agent_id}/triggers",
+    headers=headers
+)
+
+for trigger in response.json()["triggers"]:
+    print(f"{trigger['name']}: {trigger['trigger_type']} - {'active' if trigger['is_active'] else 'inactive'}")
+```
+
+### Update Trigger
+
+```python
+# Update schedule
+requests.put(
+    f"https://api.kortix.com/triggers/{trigger_id}",
+    json={
+        "config": {
+            "cron": "0 10 * * *",  # Change to 10 AM
+            "timezone": "America/New_York",
+            "prompt": "Generate morning report"
+        }
+    },
+    headers=headers
+)
+```
+
+### Activate/Deactivate Trigger
+
+```python
+# Deactivate trigger
+requests.put(
+    f"https://api.kortix.com/triggers/{trigger_id}",
+    json={"is_active": False},
+    headers=headers
+)
+
+# Reactivate trigger
+requests.put(
+    f"https://api.kortix.com/triggers/{trigger_id}",
+    json={"is_active": True},
+    headers=headers
+)
+```
+
+### Delete Trigger
+
+```python
+response = requests.delete(
+    f"https://api.kortix.com/triggers/{trigger_id}",
+    headers=headers
+)
+
+print("Trigger deleted successfully")
+```
+
+## Workflow Examples
+
+### Daily Report Automation
+
+```python
+# Create scheduled trigger for daily reports
+trigger = {
+    "agent_id": "data-analyst-agent",
+    "provider_id": "schedule",
+    "name": "Daily Sales Report",
+    "config": {
+        "cron": "0 8 * * *",
+        "timezone": "America/New_York",
+        "prompt": """Generate a daily sales report including:
+        
+        1. Total revenue for yesterday
+        2. Top 5 performing products
+        3. Comparison to same day last week
+        4. Key trends and insights
+        
+        Send the report to #sales-team on Slack.
+        """
+    }
+}
+```
+
+### Customer Onboarding Webhook
+
+```python
+# Webhook triggered when new customer signs up
+trigger = {
+    "agent_id": "customer-success-agent",
+    "provider_id": "webhook",
+    "name": "New Customer Onboarding",
+    "config": {
+        "prompt_template": """New customer signup:
+        
+        Name: {{name}}
+        Email: {{email}}
+        Company: {{company}}
+        Plan: {{plan}}
+        
+        Tasks:
+        1. Send welcome email with getting started guide
+        2. Create onboarding task in Linear
+        3. Schedule kickoff call in 2 days
+        4. Add to CRM with tag "new-customer"
+        """
+    }
+}
+
+# Trigger from your application
+requests.post(
+    f"https://api.kortix.com/triggers/webhook/{trigger_id}",
+    json={
+        "name": "Acme Corp",
+        "email": "admin@acme.com",
+        "company": "Acme Corp",
+        "plan": "enterprise"
+    }
+)
+```
+
+### Support Email Automation
+
+```python
+# Event trigger for Gmail
+trigger = {
+    "agent_id": "support-agent",
+    "provider_id": "composio",
+    "name": "Support Email Handler",
+    "config": {
+        "trigger_slug": "GMAIL_NEW_EMAIL",
+        "profile_id": "support-gmail",
+        "prompt_template": """New support email:
+        
+        From: {{sender}}
+        Subject: {{subject}}
+        Body: {{body}}
+        
+        Tasks:
+        1. Analyze the issue and categorize (bug/feature/question)
+        2. Search knowledge base for similar issues
+        3. Draft a helpful response
+        4. Create ticket in Linear if it's a bug
+        5. Send response via Gmail
+        """,
+        "filters": {
+            "to": "support@company.com"
+        }
+    }
+}
+```
+
+## Trigger Execution
+
+### How Triggers Work
+
+<Steps>
+  <Step title="Event Detection">
+    The trigger provider detects an event:
+    - Schedule: Cron time matches
+    - Webhook: HTTP request received
+    - Event: External service sends notification
+  </Step>
+  
+  <Step title="Prompt Generation">
+    The trigger's prompt template is populated with event data:
+    
+    ```python
+    prompt_template = "New email from {{sender}}: {{subject}}"
+    event_data = {"sender": "john@example.com", "subject": "Help needed"}
+    
+    # Result: "New email from john@example.com: Help needed"
+    ```
+  </Step>
+  
+  <Step title="Agent Execution">
+    A new agent run is started with the generated prompt.
+  </Step>
+  
+  <Step title="Result Logging">
+    Execution results are logged for monitoring and debugging.
+  </Step>
+</Steps>
+
+### Template Variables
+
+Access event data in your prompts using `{{variable}}` syntax:
+
+**Webhook Data**
+```json
+{
+  "customer_name": "John Doe",
+  "order_id": "12345",
+  "amount": 99.99
+}
+```
+
+**Prompt Template**
+```markdown
+New order from {{customer_name}}:
+- Order ID: {{order_id}}
+- Amount: ${{amount}}
+
+Please process and send confirmation.
+```
+
+**Generated Prompt**
+```markdown
+New order from John Doe:
+- Order ID: 12345
+- Amount: $99.99
+
+Please process and send confirmation.
+```
+
+## Monitoring Triggers
+
+### View Trigger Events
+
+```python
+# Get recent trigger executions
+response = requests.get(
+    f"https://api.kortix.com/triggers/{trigger_id}/events",
+    headers=headers
+)
+
+for event in response.json()["events"]:
+    print(f"Timestamp: {event['timestamp']}")
+    print(f"Status: {'success' if event['success'] else 'failed'}")
+    print(f"Agent Run ID: {event.get('agent_run_id')}")
+    if event.get('error_message'):
+        print(f"Error: {event['error_message']}")
+```
+
+### Debugging Failed Triggers
+
+Common issues and solutions:
+
+<AccordionGroup>
+  <Accordion title="Trigger Not Firing">
+    **Check:**
+    - Trigger is active (`is_active: true`)
+    - Cron expression is valid
+    - Timezone is correct
+    - Webhook URL is correct
+    - Event integration is authenticated
+    
+    **Verify:**
+    ```python
+    trigger = requests.get(
+        f"https://api.kortix.com/triggers/{trigger_id}",
+        headers=headers
+    ).json()
+    
+    print(f"Active: {trigger['is_active']}")
+    print(f"Config: {trigger['config']}")
+    ```
+  </Accordion>
+  
+  <Accordion title="Agent Execution Fails">
+    **Check:**
+    - Agent has required tools enabled
+    - Prompt template is valid
+    - Template variables match event data
+    - Agent has necessary permissions
+    
+    **View Error:**
+    ```python
+    events = requests.get(
+        f"https://api.kortix.com/triggers/{trigger_id}/events",
+        headers=headers
+    ).json()["events"]
+    
+    for event in events:
+        if not event['success']:
+            print(f"Error: {event['error_message']}")
+            print(f"Event data: {event['event_data']}")
+    ```
+  </Accordion>
+  
+  <Accordion title="Template Variables Not Working">
+    **Ensure:**
+    - Variable names match event data keys
+    - Variables use correct syntax: `{{variable}}`
+    - Event data is properly formatted
+    
+    **Test:**
+    ```python
+    # Send test webhook with known data
+    test_data = {
+        "test_variable": "test_value",
+        "number": 123
+    }
+    
+    requests.post(
+        f"https://api.kortix.com/triggers/webhook/{trigger_id}",
+        json=test_data
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<Card title="Schedule Optimization" icon="clock">
+  - Avoid overlapping schedules for the same agent
+  - Consider timezone differences for distributed teams
+  - Use appropriate intervals (avoid excessive frequency)
+  - Add buffer time for long-running tasks
+</Card>
+
+<Card title="Webhook Security" icon="shield">
+  - Validate webhook payloads in your application
+  - Use HTTPS for webhook endpoints
+  - Consider adding authentication headers
+  - Monitor for unusual webhook activity
+</Card>
+
+<Card title="Error Handling" icon="triangle-alert">
+  - Include error handling in agent prompts
+  - Monitor trigger execution logs
+  - Set up alerts for failed triggers
+  - Test triggers thoroughly before production use
+</Card>
+
+<Card title="Prompt Design" icon="file-edit">
+  - Keep prompts clear and actionable
+  - Include all necessary context
+  - Use structured formats for consistency
+  - Test with various input scenarios
+</Card>
+
+## Limits and Quotas
+
+Trigger limits by subscription tier:
+
+| Tier | Schedule Triggers | Webhook Triggers | Event Triggers |
+|------|-------------------|------------------|----------------|
+| Free | 3 | 5 | 3 |
+| Pro | 10 | 25 | 10 |
+| Team | 50 | 100 | 50 |
+| Enterprise | Unlimited | Unlimited | Unlimited |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Agents" icon="plus" href="/agents/creating-agents">
+    Learn how to create agents
+  </Card>
+  <Card title="System Prompts" icon="file-lines" href="/agents/system-prompts">
+    Write effective system prompts
+  </Card>
+  <Card title="API Reference" icon="code" href="/features/triggers">
+    Full trigger API documentation
+  </Card>
+  <Card title="Composio Integration" icon="plug" href="/tools/composio">
+    Connect external services
+  </Card>
+</CardGroup>

@@ -1,0 +1,424 @@
+---
+title: Vision Capabilities
+description: Load, analyze, and understand images with AI-powered visual intelligence
+---
+
+## Overview
+
+Kortix agents can see and analyze images, enabling visual understanding for tasks like UI recreation, diagram analysis, screenshot interpretation, and visual content extraction. The vision capability loads images into the conversation context and makes them accessible to the AI model.
+
+Images are automatically compressed, converted to supported formats (SVG→PNG), and uploaded to cloud storage for efficient processing.
+
+## Core Function
+
+### Load Image
+
+```python
+# From workspace file
+load_image(file_path="screenshots/homepage.png")
+
+# From URL
+load_image(file_path="https://example.com/diagram.jpg")
+```
+
+Loads an image into conversation context for AI analysis. Supports both local files and URLs.
+
+## Image Context Management
+
+<Warning>
+**Hard Limit**: Maximum 3 images can be loaded in context at any time. Each image consumes 1000+ tokens.
+</Warning>
+
+From the source code (`sb_vision_tool.py:46-86`):
+
+```python
+@tool_metadata(
+    display_name="Image Vision",
+    description="View and analyze images to understand their content",
+    icon="Eye",
+    color="bg-pink-100 dark:bg-pink-800/50"
+)
+class SandboxVisionTool(SandboxToolsBase):
+    """Tool for allowing the agent to 'see' images within the sandbox."""
+```
+
+### Automatic Context Management
+
+From `sb_vision_tool.py:464-472`:
+
+```python
+# Check current image count in context (enforce 3-image limit)
+current_image_count = await self._count_images_in_context()
+if current_image_count >= 3:
+    # Auto-clear all images to make room for new ones
+    cleared = await self._clear_all_images()
+    logger.info(f"Auto-cleared {cleared} image(s) to make room (was {current_image_count}/3)")
+    current_image_count = 0
+```
+
+When the 3-image limit is reached, older images are automatically cleared to make room.
+
+## Supported Formats
+
+- **JPEG/JPG**: Standard photo format
+- **PNG**: Lossless format with transparency
+- **GIF**: Animated images (animations preserved)
+- **WEBP**: Modern efficient format
+- **SVG**: Vector graphics (automatically converted to PNG)
+
+<Warning>
+**Image Files Only**: This tool is ONLY for actual image files. For PDFs and documents, use `read_file` instead.
+</Warning>
+
+## Real-World Examples
+
+### Example 1: UI Recreation from Screenshot
+
+```python
+# Load UI screenshot
+load_image(file_path="designs/dashboard.png")
+
+# Agent can now see the image and recreate it
+# "Recreate this dashboard UI in HTML/CSS"
+
+# Result: Agent builds matching HTML/CSS based on visual
+create_file(
+    file_path="dashboard.html",
+    file_contents="<html>...recreated UI...</html>"
+)
+```
+
+### Example 2: Diagram Analysis
+
+```python
+# Load architecture diagram
+load_image(file_path="docs/architecture.svg")
+
+# Agent analyzes the diagram
+# "Explain this system architecture"
+
+# Agent describes:
+# - Components and their relationships
+# - Data flows
+# - Integration points
+# - Technologies shown
+```
+
+### Example 3: Data Extraction from Chart
+
+```python
+# Load chart image
+load_image(file_path="reports/sales_chart.png")
+
+# Extract data
+# "Extract the sales figures from this chart"
+
+# Agent reads visual data and creates structured output
+create_file(
+    file_path="sales_data.json",
+    file_contents=json.dumps(extracted_data)
+)
+```
+
+### Example 4: Multiple Image Comparison
+
+```python
+# Load up to 3 images
+load_image(file_path="version1.png")
+load_image(file_path="version2.png")  
+load_image(file_path="version3.png")
+
+# Compare
+# "What are the differences between these three design versions?"
+
+# Agent analyzes all 3 images and identifies changes
+```
+
+## Implementation Details
+
+### Image Compression
+
+From `sb_vision_tool.py:171-279`:
+
+```python
+async def compress_image(self, image_bytes: bytes, mime_type: str, file_path: str) -> Tuple[bytes, str]:
+    """
+    Compress an image to reduce its size while maintaining reasonable quality.
+    
+    - Resizes if larger than 1920x1080
+    - Converts RGBA to RGB for JPEG
+    - Optimizes with quality settings
+    - Validates output format
+    """
+    # Open image from bytes
+    img = Image.open(BytesIO(image_bytes))
+    
+    # Calculate new dimensions while maintaining aspect ratio
+    width, height = img.size
+    if width > DEFAULT_MAX_WIDTH or height > DEFAULT_MAX_HEIGHT:
+        ratio = min(DEFAULT_MAX_WIDTH / width, DEFAULT_MAX_HEIGHT / height)
+        new_width = int(width * ratio)
+        new_height = int(height * ratio)
+        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+```
+
+Compression settings:
+- **Max dimensions**: 1920x1080
+- **JPEG quality**: 85
+- **PNG compression**: Level 6
+- **Max original size**: 10 MB
+- **Max compressed size**: 5 MB
+
+### SVG Conversion
+
+From `sb_vision_tool.py:98-169`:
+
+```python
+async def convert_svg_with_sandbox_browser(self, svg_full_path: str) -> Tuple[bytes, str]:
+    """
+    Convert SVG to PNG using sandbox browser API for better rendering support.
+    
+    Uses Chromium to render SVG and capture as PNG for highest quality.
+    """
+    # Initialize browser
+    init_response = await self.sandbox.process.exec(
+        "curl -s -X POST 'http://localhost:8004/api/init' ...",
+        env={"GEMINI_API_KEY": config.GEMINI_API_KEY}
+    )
+    
+    # Call SVG conversion endpoint
+    params = {"svg_file_path": svg_full_path}
+    response = await self.sandbox.process.exec(
+        f"curl -s -X POST 'http://localhost:8004/api/convert-svg' -d '{json.dumps(params)}'"
+    )
+    
+    # Extract PNG data
+    response_data = json.loads(response.result)
+    screenshot_base64 = response_data.get("screenshot_base64")
+    png_bytes = base64.b64decode(screenshot_base64)
+    
+    return png_bytes, 'image/png'
+```
+
+SVG files are converted using:
+1. **Primary**: Chromium browser rendering (highest quality)
+2. **Fallback**: svglib + reportlab (if browser fails)
+
+### Cloud Storage Upload
+
+From `sb_vision_tool.py:429-463`:
+
+```python
+# Upload to Supabase Storage instead of base64
+try:
+    # Generate unique filename
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    unique_id = str(uuid.uuid4())[:8]
+    
+    ext_map = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp'
+    }
+    ext = ext_map.get(compressed_mime_type, 'jpg')
+    
+    storage_filename = f"loaded_images/{base_filename}_{timestamp}_{unique_id}.{ext}"
+    
+    # Upload to Supabase storage (public bucket for LLM access)
+    client = await self.db.client
+    storage_response = await client.storage.from_('image-uploads').upload(
+        storage_filename,
+        compressed_bytes,
+        {"content-type": compressed_mime_type}
+    )
+    
+    # Get public URL
+    public_url = await client.storage.from_('image-uploads').get_public_url(storage_filename)
+```
+
+Images are stored in Supabase with:
+- Unique timestamped filenames
+- Public access for LLM
+- Original filename preserved in metadata
+
+### Format Validation
+
+From `sb_vision_tool.py:420-427`:
+
+```python
+# CRITICAL: Validate MIME type before upload - Anthropic only accepts 4 formats
+SUPPORTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+if compressed_mime_type not in SUPPORTED_MIME_TYPES:
+    return self.fail_response(
+        f"Invalid image format '{compressed_mime_type}' after compression. "
+        f"Only {', '.join(SUPPORTED_MIME_TYPES)} are supported for viewing by the AI."
+    )
+```
+
+Only formats supported by Claude are allowed.
+
+## Image Context Format
+
+Images are added to conversation context in OpenAI format:
+
+```python
+"_image_context_data": {
+    "thread_id": self.thread_id,
+    "message_content": {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "[Image loaded from 'screenshot.png']"},
+            {"type": "image_url", "image_url": {"url": public_url}}
+        ]
+    },
+    "metadata": {
+        "file_path": "screenshot.png",
+        "mime_type": "image/png",
+        "original_size": 2048000,
+        "compressed_size": 512000
+    }
+}
+```
+
+## Download from URL
+
+From `sb_vision_tool.py:286-321`:
+
+```python
+async def download_image_from_url(self, url: str) -> Tuple[bytes, str]:
+    """Download image from a URL (async using aiohttp)"""
+    headers = {"User-Agent": "Mozilla/5.0"}  # Some servers block default Python
+    timeout = aiohttp.ClientTimeout(total=10)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        # HEAD request to get the image size
+        async with session.head(url, headers=headers) as head_response:
+            head_response.raise_for_status()
+            
+            # Check content length
+            content_length = head_response.headers.get('Content-Length')
+            if content_length:
+                content_length = int(content_length)
+                if content_length > MAX_IMAGE_SIZE:
+                    raise Exception(f"Image is too large ({content_length/1024/1024:.2f}MB)")
+        
+        # Download the image
+        async with session.get(url, headers=headers) as response:
+            response.raise_for_status()
+            image_bytes = await response.read()
+            
+            # Get MIME type
+            mime_type = response.headers.get('Content-Type')
+            if not mime_type or not mime_type.startswith('image/'):
+                raise Exception(f"URL does not point to an image: {url}")
+            
+            return image_bytes, mime_type
+```
+
+## When to Keep vs Clear Images
+
+### Keep Images Loaded When:
+
+- User wants to recreate/rebuild what's in the image
+- Writing code based on image content (UI, diagrams, wireframes)
+- Editing or iterating on image content
+- Task requires active visual reference
+- In middle of multi-step task involving the image
+
+### Clear Images When:
+
+- Task is complete and images no longer needed
+- User moves to different topic unrelated to images
+- You only needed to extract information/text (already done)
+- Reached 3-image limit and need to load new images
+
+## Best Practices
+
+### 1. Only Load Actual Images
+
+```python
+# ✅ GOOD: Image files
+load_image(file_path="screenshot.png")
+load_image(file_path="diagram.svg")
+
+# ❌ BAD: Not images - use read_file instead
+load_image(file_path="document.pdf")  # Wrong!
+load_image(file_path="data.csv")      # Wrong!
+```
+
+### 2. Manage the 3-Image Limit
+
+```python
+# Load images strategically
+load_image(file_path="design1.png")  # 1/3
+load_image(file_path="design2.png")  # 2/3
+load_image(file_path="design3.png")  # 3/3
+
+# Loading 4th image auto-clears previous ones
+load_image(file_path="design4.png")  # 1/3 (previous cleared)
+```
+
+### 3. Keep Images During Active Work
+
+```python
+# ✅ GOOD: Keep loaded while recreating UI
+load_image(file_path="mockup.png")
+create_file(file_path="index.html", ...)  # Image still needed
+edit_file(target_file="index.html", ...)   # Still referencing image
+# Clear after complete
+
+# ❌ BAD: Clear too early
+load_image(file_path="mockup.png")
+# clear_images()  # Don't clear yet - still need it!
+create_file(file_path="index.html", ...)  # Can't see reference anymore
+```
+
+### 4. Optimize for Token Usage
+
+```python
+# Extract text/data from image, then clear
+load_image(file_path="chart.png")
+# "Extract the data from this chart"
+data = extract_chart_data()  # Got the data
+# Can now clear image - data extracted
+
+# Keep image loaded for visual tasks
+load_image(file_path="design.png")  
+# "Recreate this design" - need to keep seeing it
+```
+
+## Limitations
+
+- **Max images in context**: 3 simultaneous images
+- **Max file size**: 10 MB original, 5 MB compressed
+- **Max dimensions**: Resized to 1920x1080 if larger
+- **Token cost**: ~1000+ tokens per image
+- **Supported formats**: JPEG, PNG, GIF, WEBP (SVG converted)
+- **PDF not supported**: Use `read_file` for PDFs
+
+## Configuration
+
+Vision capabilities require:
+
+```bash
+# Required for SVG conversion via browser
+GEMINI_API_KEY=your_gemini_key
+```
+
+Without GEMINI_API_KEY, SVG conversion falls back to svglib (lower quality).
+
+## Image Files Remain in Sandbox
+
+<Info>
+Clearing images from context only removes them from the conversation. The actual image files remain in the sandbox at their original paths and can be reloaded anytime.
+</Info>
+
+```python
+# Clear from context
+clear_images_from_context()
+
+# File still exists in sandbox
+# Can reload later
+load_image(file_path="screenshots/ui.png")
+```

@@ -1,0 +1,283 @@
+---
+title: 'Get Thread'
+description: 'Retrieve detailed information about a specific thread'
+---
+
+## Overview
+
+Retrieves comprehensive details about a thread, including project information, sandbox configuration, message count, and recent agent runs.
+
+<Note>
+This endpoint supports both authenticated and unauthenticated access. Public threads can be accessed without authentication.
+</Note>
+
+## Request
+
+<ParamField path="thread_id" type="string" required>
+  The unique identifier of the thread to retrieve
+</ParamField>
+
+### Authentication
+
+Optional JWT token. If provided, validates user access to private threads.
+
+```bash cURL
+curl https://api.kortix.ai/threads/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+```python Python SDK
+from kortix import Kortix
+
+client = Kortix(api_key="YOUR_API_KEY")
+
+thread = client.threads.get(
+    thread_id="550e8400-e29b-41d4-a716-446655440000"
+)
+
+print(f"Thread: {thread.name}")
+print(f"Messages: {thread.message_count}")
+```
+
+```javascript JavaScript SDK
+import { Kortix } from 'kortix';
+
+const client = new Kortix({
+  apiKey: 'YOUR_API_KEY'
+});
+
+const thread = await client.threads.get({
+  threadId: '550e8400-e29b-41d4-a716-446655440000'
+});
+
+console.log(`Thread: ${thread.name}`);
+console.log(`Messages: ${thread.message_count}`);
+```
+
+## Response
+
+<ResponseField name="thread_id" type="string" required>
+  The unique identifier of the thread
+</ResponseField>
+
+<ResponseField name="project_id" type="string">
+  The project this thread belongs to
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  The name of the thread (defaults to "New Chat")
+</ResponseField>
+
+<ResponseField name="metadata" type="object" required>
+  Additional thread metadata (custom key-value pairs)
+</ResponseField>
+
+<ResponseField name="is_public" type="boolean" required>
+  Whether the thread is publicly accessible
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  ISO 8601 timestamp of thread creation
+</ResponseField>
+
+<ResponseField name="updated_at" type="string" required>
+  ISO 8601 timestamp of last update
+</ResponseField>
+
+<ResponseField name="project" type="object">
+  Associated project details
+  
+  <Expandable title="Project Object Fields">
+    <ResponseField name="project.project_id" type="string" required>
+      The project's unique identifier
+    </ResponseField>
+    
+    <ResponseField name="project.name" type="string" required>
+      The project name
+    </ResponseField>
+    
+    <ResponseField name="project.description" type="string" required>
+      The project description
+    </ResponseField>
+    
+    <ResponseField name="project.is_public" type="boolean" required>
+      Whether the project is publicly accessible
+    </ResponseField>
+    
+    <ResponseField name="project.icon_name" type="string">
+      Icon identifier for the project
+    </ResponseField>
+    
+    <ResponseField name="project.created_at" type="string" required>
+      ISO 8601 timestamp of project creation
+    </ResponseField>
+    
+    <ResponseField name="project.updated_at" type="string" required>
+      ISO 8601 timestamp of last project update
+    </ResponseField>
+    
+    <ResponseField name="project.sandbox" type="object" required>
+      Sandbox configuration and access details
+      
+      <ResponseField name="project.sandbox.id" type="string">
+        The sandbox external ID
+      </ResponseField>
+      
+      <ResponseField name="project.sandbox.pass" type="string">
+        Authentication password for sandbox access
+      </ResponseField>
+      
+      <ResponseField name="project.sandbox.vnc_preview" type="string">
+        VNC preview URL for remote desktop access
+      </ResponseField>
+      
+      <ResponseField name="project.sandbox.sandbox_url" type="string">
+        Web preview URL (typically port 8080)
+      </ResponseField>
+      
+      <ResponseField name="project.sandbox.token" type="string">
+        Authentication token for sandbox access
+      </ResponseField>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message_count" type="integer" required>
+  Total number of messages in the thread
+</ResponseField>
+
+<ResponseField name="recent_agent_runs" type="array" required>
+  List of recent agent execution runs
+  
+  <Expandable title="Agent Run Object Fields">
+    <ResponseField name="id" type="string" required>
+      Agent run unique identifier
+    </ResponseField>
+    
+    <ResponseField name="status" type="string" required>
+      Current status: `running`, `completed`, `failed`, etc.
+    </ResponseField>
+    
+    <ResponseField name="started_at" type="string" required>
+      ISO 8601 timestamp when the run started
+    </ResponseField>
+    
+    <ResponseField name="completed_at" type="string">
+      ISO 8601 timestamp when the run completed (null if still running)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="_pending" type="boolean">
+  Only present for threads in pending state (optimistic creation)
+</ResponseField>
+
+### Response Example
+
+```json
+{
+  "thread_id": "550e8400-e29b-41d4-a716-446655440000",
+  "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "name": "Data Analysis Project",
+  "metadata": {
+    "title": "Data Analysis Project"
+  },
+  "is_public": false,
+  "created_at": "2026-03-02T10:30:00Z",
+  "updated_at": "2026-03-02T14:25:00Z",
+  "project": {
+    "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "name": "My Project",
+    "description": "",
+    "is_public": false,
+    "icon_name": "code",
+    "created_at": "2026-03-02T10:30:00Z",
+    "updated_at": "2026-03-02T10:30:00Z",
+    "sandbox": {
+      "id": "sandbox_abc123",
+      "pass": "550e8400-e29b-41d4-a716-446655440001",
+      "vnc_preview": "https://sandbox.kortix.ai/vnc/abc123",
+      "sandbox_url": "https://sandbox.kortix.ai/web/abc123",
+      "token": "tok_xyz789"
+    }
+  },
+  "message_count": 42,
+  "recent_agent_runs": [
+    {
+      "id": "run_123",
+      "status": "completed",
+      "started_at": "2026-03-02T14:20:00Z",
+      "completed_at": "2026-03-02T14:25:00Z"
+    }
+  ]
+}
+```
+
+## Special Behaviors
+
+### Pending Threads
+
+If a thread was just created using optimistic creation and hasn't been persisted to the database yet, the endpoint returns a minimal response with `_pending: true`:
+
+```json
+{
+  "thread_id": "550e8400-e29b-41d4-a716-446655440000",
+  "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "name": "New Chat",
+  "metadata": {},
+  "is_public": false,
+  "created_at": "2026-03-02T15:00:00Z",
+  "updated_at": "2026-03-02T15:00:00Z",
+  "project": {
+    "project_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "name": "New Project",
+    "description": "",
+    "sandbox": {},
+    "is_public": false,
+    "icon_name": null,
+    "created_at": "2026-03-02T15:00:00Z",
+    "updated_at": "2026-03-02T15:00:00Z"
+  },
+  "message_count": 0,
+  "recent_agent_runs": [],
+  "_pending": true
+}
+```
+
+### Automatic Sandbox Startup
+
+When retrieving a thread with an existing sandbox, the sandbox is automatically started in the background (non-blocking) to ensure it's ready for use.
+
+## Error Responses
+
+<Expandable title="404 - Not Found">
+
+```json
+{
+  "detail": "Thread not found"
+}
+```
+
+The thread doesn't exist or is not available in the pending cache.
+
+</Expandable>
+
+<Expandable title="403 - Forbidden">
+
+Returned when the authenticated user doesn't have access to a private thread.
+
+</Expandable>
+
+<Expandable title="500 - Internal Server Error">
+
+```json
+{
+  "detail": "Failed to fetch thread: <error message>"
+}
+```
+
+</Expandable>
+
+## Source Reference
+
+Implementation: `/workspace/source/backend/core/threads/api.py:411`

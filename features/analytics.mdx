@@ -1,0 +1,512 @@
+---
+title: Conversation Analytics
+description: Gain insights into user engagement, sentiment, and use cases with AI-powered analytics
+---
+
+Kortix's analytics system uses AI to analyze conversations and extract meaningful insights about user engagement, sentiment, frustration levels, and use cases. This helps you understand how users interact with your agents and improve their experience.
+
+## Overview
+
+The analytics system automatically:
+
+1. **Analyzes conversations** after agent runs complete
+2. **Extracts sentiment** and frustration signals
+3. **Classifies use cases** to understand what users are doing
+4. **Detects feature requests** from user feedback
+5. **Calculates engagement metrics** using RFM analysis
+
+## How Analytics Works
+
+Analytics processing happens asynchronously in the background:
+
+<Steps>
+  <Step title="Queue for analysis">
+    When an agent run completes, the conversation is queued for analysis
+  </Step>
+  
+  <Step title="Fetch messages">
+    The system retrieves conversation messages from the thread
+  </Step>
+  
+  <Step title="AI analysis">
+    An AI model analyzes the conversation and extracts insights
+  </Step>
+  
+  <Step title="Store results">
+    Analysis results are stored in the database for reporting
+  </Step>
+</Steps>
+
+## Conversation Analysis
+
+The AI analyzes conversations across multiple dimensions:
+
+### Sentiment Analysis
+
+Classifies overall conversation sentiment:
+- **Positive**: User satisfied, task successful
+- **Neutral**: Informational, no strong emotion
+- **Negative**: User frustrated or disappointed
+- **Mixed**: Combination of positive and negative
+
+### Frustration Detection
+
+Identifies and scores user frustration (0.0 to 1.0):
+
+<CodeGroup>
+```python conversation_analyzer.py (lines 102-124)
+## FRUSTRATION SIGNALS (Kortix-specific)
+- Agent stuck in loops or repeating actions
+- Browser/sandbox errors or timeouts
+- Agent not understanding the task after multiple attempts
+- User saying "try again", "that's wrong", "not what I asked"
+- Failed file creation or code execution
+- Agent apologizing repeatedly
+- User giving up mid-task
+
+## SUCCESS SIGNALS
+- Task completed as requested
+- User thanks or expresses satisfaction
+- User asks follow-up questions (engaged)
+- Agent successfully created files/output
+
+## WHAT'S NOT FRUSTRATION
+- Long tasks (expected for complex work)
+- Multiple tool calls (normal agent behavior)
+- User providing clarifications (normal interaction)
+```
+</CodeGroup>
+
+### Intent Classification
+
+Categorizes the user's primary intent:
+- **Question**: User asking for information
+- **Task**: User requesting the agent to do something
+- **Complaint**: User expressing dissatisfaction
+- **Feature request**: User suggesting improvements
+- **Chat**: Casual conversation
+
+### Use Case Detection
+
+Identifies what the user is trying to accomplish:
+
+<CodeGroup>
+```python conversation_analyzer.py (lines 20-28)
+DEFAULT_USE_CASE_CATEGORIES = [
+    "Research & Information Gathering",
+    "Business & Marketing",
+    "Code & Programming",
+    "Web Development",
+    "Content Creation",
+    "Presentations",
+    "Image Generation",
+]
+```
+</CodeGroup>
+
+The AI can also create new categories organically based on actual usage patterns.
+
+### Feature Request Detection
+
+Identifies when users are requesting new features or improvements:
+
+```json
+{
+  "feature_request": {
+    "detected": true,
+    "text": "User requested ability to export data as Excel files"
+  }
+}
+```
+
+## Analysis Prompt
+
+The AI receives context and instructions for analysis:
+
+<CodeGroup>
+```python conversation_analyzer.py (lines 59-123)
+def build_analysis_prompt(existing_categories: List[str]) -> str:
+    return f"""You are analyzing conversations from Kortix, an AI agent platform.
+
+## ABOUT KORTIX
+Kortix is a generalist AI agent that can:
+- Browse the web and extract information
+- Write, edit, and execute code
+- Create and manage files (documents, spreadsheets, presentations)
+- Interact with APIs and external services
+- Perform multi-step tasks autonomously
+
+## YOUR TASK
+Analyze the conversation and return valid JSON only.
+
+The conversation may have two sections:
+- **PREVIOUS CONTEXT**: Earlier user messages showing what they asked for before
+- **CURRENT INTERACTION**: The actual interaction to analyze (user + assistant)
+
+Focus your analysis on the CURRENT INTERACTION, but use PREVIOUS CONTEXT to understand the user's overall goal.
+
+Return this exact JSON structure:
+{{
+  "sentiment": "<one of: positive, neutral, negative, mixed>",
+  "frustration": {{
+    "score": <float from 0 (none) to 1 (severe)>,
+    "signals": ["<list of specific frustration indicators>"]
+  }},
+  "intent_type": "<one of: question, task, complaint, feature_request, chat>",
+  "feature_request": {{
+    "detected": <boolean>,
+    "text": "<description if detected>"
+  }},
+  "use_case": {{
+    "is_useful": <true if accomplished real task>,
+    "category": "<Pick from: {categories_str}. Or create new category>"
+  }}
+}}
+"""
+```
+</CodeGroup>
+
+## Message Context
+
+The analyzer includes context from previous messages:
+
+<CodeGroup>
+```python conversation_analyzer.py (lines 173-246)
+async def fetch_conversation_messages(
+    thread_id: str,
+    agent_run_id: Optional[str] = None,
+    include_context: bool = True,
+    context_message_limit: int = 10
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    # If agent_run_id provided, get time range for this specific run
+    if agent_run_id:
+        run_result = await client.from_('agent_runs')
+            .select('started_at, completed_at')
+            .eq('id', agent_run_id)
+            .single()
+            .execute()
+        
+        # Include 30 seconds before to capture triggering message
+        started_at = (started_dt - timedelta(seconds=30)).isoformat()
+        
+        # Fetch messages for this run
+        run_messages = await fetch_run_messages(started_at, completed_at)
+        
+        # Fetch previous USER messages as context (not verbose assistant messages)
+        context_messages = await fetch_context_messages(
+            before=started_at,
+            limit=context_message_limit
+        )
+        
+        return context_messages, run_messages
+    
+    # No run_id: return all messages
+    return [], await fetch_all_messages()
+```
+</CodeGroup>
+
+## RFM Engagement Scoring
+
+Kortix uses RFM (Recency, Frequency, Monetary) analysis to measure user engagement:
+
+### RFM Dimensions
+
+**Recency**: Days since last agent run (1-5 score)
+- Score 5: Last activity ≤ 1 day ago
+- Score 4: 1-3 days ago
+- Score 3: 3-7 days ago
+- Score 2: 7-14 days ago
+- Score 1: > 14 days ago
+
+**Frequency**: Agent runs in the last 30 days (1-5 score)
+- Score 5: ≥ 20 runs
+- Score 4: 10-19 runs
+- Score 3: 5-9 runs
+- Score 2: 2-4 runs
+- Score 1: 0-1 runs
+
+**Monetary**: Total conversation count (proxy for value, 1-5 score)
+- Score 5: ≥ 100 conversations
+- Score 4: 50-99 conversations
+- Score 3: 20-49 conversations
+- Score 2: 5-19 conversations
+- Score 1: < 5 conversations
+
+### User Segments
+
+Based on RFM scores, users are categorized:
+
+- **Champion**: High recency + high frequency (R≥4, F≥4)
+- **Loyal**: High overall RFM (sum ≥ 12)
+- **At Risk**: Low recency, high frequency (R≤2, F≥4)
+- **Hibernating**: Low recency + low frequency (R≤2, F≤2)
+- **New User**: High recency, low frequency (R≥4, F≤2)
+- **Potential**: Moderate engagement (sum 9-11)
+- **Needs Attention**: Below average (sum 6-8)
+
+### Calculate RFM Score
+
+<CodeGroup>
+```python conversation_analyzer.py (lines 522-694)
+async def calculate_rfm_engagement(account_id: str, days: int = 30) -> Dict[str, Any]:
+    # Get user's threads
+    threads = await fetch_account_threads(account_id)
+    
+    # Get agent runs in period
+    runs = await fetch_runs_in_period(threads, days)
+    runs_in_period = len(runs)
+    
+    # Calculate days since last activity
+    if runs:
+        last_run_time = runs[0].get('started_at')
+        days_since_last = (now - last_dt).days
+    else:
+        days_since_last = days
+    
+    # Get total conversations
+    total_conversations = await count_total_runs(threads)
+    
+    # Score each dimension (1-5)
+    recency_score = score_recency(days_since_last)
+    frequency_score = score_frequency(runs_in_period)
+    monetary_score = score_monetary(total_conversations)
+    
+    # Calculate churn risk (inverse of R+F average)
+    avg_rf = (recency_score + frequency_score) / 2
+    churn_risk = 1 - (avg_rf - 1) / 4  # Maps 1-5 to 1.0-0.0
+    
+    # Determine segment
+    if recency_score >= 4 and frequency_score >= 4:
+        segment = 'champion'
+    elif recency_score <= 2 and frequency_score <= 2:
+        segment = 'hibernating'
+    # ... more segment logic
+    
+    return {
+        'rfm_score': f"{recency_score}-{frequency_score}-{monetary_score}",
+        'churn_risk': churn_risk,
+        'segment': segment,
+        'days_since_last_activity': days_since_last,
+        'runs_in_period': runs_in_period,
+        'total_conversations': total_conversations
+    }
+```
+</CodeGroup>
+
+## Analysis Results
+
+After analysis, results are stored in the database:
+
+<CodeGroup>
+```python conversation_analyzer.py (lines 433-519)
+async def store_analysis(
+    thread_id: str,
+    agent_run_id: Optional[str],
+    account_id: str,
+    analysis: Dict[str, Any],
+    agent_run_status: Optional[str] = None
+) -> bool:
+    record = {
+        'thread_id': thread_id,
+        'agent_run_id': agent_run_id,
+        'account_id': account_id,
+        'sentiment_label': analysis.get('sentiment_label'),
+        'frustration_score': analysis.get('frustration_score'),
+        'frustration_signals': json.dumps(analysis.get('frustration_signals', [])),
+        'intent_type': analysis.get('intent_type'),
+        'is_feature_request': analysis.get('is_feature_request', False),
+        'feature_request_text': analysis.get('feature_request_text'),
+        'is_useful': analysis.get('is_useful', True),
+        'use_case_category': analysis.get('use_case_category'),
+        'user_message_count': analysis.get('user_message_count'),
+        'assistant_message_count': analysis.get('assistant_message_count'),
+        'conversation_duration_seconds': analysis.get('conversation_duration_seconds'),
+        'agent_run_status': agent_run_status,
+        'raw_analysis': json.dumps(analysis.get('raw_analysis', {})),
+    }
+    
+    await client.from_('conversation_analytics').insert(record).execute()
+    
+    # Sync use_case_category to project categories
+    if use_case and is_useful:
+        await sync_category_to_project(thread_id, use_case)
+    
+    return True
+```
+</CodeGroup>
+
+## Queuing System
+
+Conversations are queued for analysis to avoid blocking agent execution:
+
+<CodeGroup>
+```python conversation_analyzer.py (lines 126-171)
+async def queue_for_analysis(
+    thread_id: str,
+    agent_run_id: Optional[str],
+    account_id: str
+) -> None:
+    # Check if already queued
+    existing = await client.from_('conversation_analytics_queue')
+        .select('id')
+        .eq('thread_id', thread_id)
+        .in_('status', ['pending', 'processing'])
+        .execute()
+    
+    if existing.data:
+        logger.debug(f"Thread {thread_id} already in queue, skipping")
+        return
+    
+    # Insert into queue
+    await client.from_('conversation_analytics_queue').insert({
+        'thread_id': thread_id,
+        'agent_run_id': agent_run_id,
+        'account_id': account_id,
+        'status': 'pending',
+        'attempts': 0,
+    }).execute()
+```
+</CodeGroup>
+
+## Background Worker
+
+A separate worker process handles queued analysis jobs:
+
+<CodeGroup>
+```python conversation_analytics_worker.py
+while True:
+    # Fetch pending jobs
+    jobs = await fetch_pending_jobs(limit=10)
+    
+    for job in jobs:
+        # Mark as processing
+        await update_job_status(job['id'], 'processing')
+        
+        try:
+            # Analyze conversation
+            analysis = await analyze_conversation(
+                thread_id=job['thread_id'],
+                agent_run_id=job['agent_run_id']
+            )
+            
+            if analysis:
+                # Store results
+                await store_analysis(
+                    thread_id=job['thread_id'],
+                    agent_run_id=job['agent_run_id'],
+                    account_id=job['account_id'],
+                    analysis=analysis
+                )
+                
+                # Mark complete
+                await update_job_status(job['id'], 'completed')
+            else:
+                await update_job_status(job['id'], 'failed')
+        
+        except Exception as e:
+            logger.error(f"Analysis failed: {e}")
+            await update_job_status(job['id'], 'failed')
+    
+    # Wait before next batch
+    await asyncio.sleep(10)
+```
+</CodeGroup>
+
+## Use Case Clustering
+
+The system can cluster similar use cases to identify patterns:
+
+<CodeGroup>
+```python use_case_clustering.py
+async def cluster_use_cases(account_id: Optional[str] = None):
+    # Fetch all use case categories
+    analytics = await fetch_analytics(account_id)
+    
+    # Group by category
+    category_counts = {}
+    for record in analytics:
+        category = record['use_case_category']
+        category_counts[category] = category_counts.get(category, 0) + 1
+    
+    # Sort by frequency
+    sorted_categories = sorted(
+        category_counts.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+    
+    return {
+        'categories': sorted_categories,
+        'total_conversations': len(analytics),
+        'unique_categories': len(category_counts)
+    }
+```
+</CodeGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Monitor frustration trends">
+    Track frustration scores over time to identify issues with agent performance. High frustration may indicate:
+    - Poorly configured agent instructions
+    - Missing tools or capabilities
+    - Complex tasks that need simplification
+  </Accordion>
+
+  <Accordion title="Review feature requests">
+    Regularly check conversations flagged as feature requests. User feedback is valuable for improving your agents and platform.
+  </Accordion>
+
+  <Accordion title="Analyze use case distribution">
+    Understanding what users actually do with your agents helps prioritize development and optimization efforts.
+  </Accordion>
+
+  <Accordion title="Track engagement metrics">
+    Use RFM scores to identify:
+    - Champions worth engaging with for feedback
+    - At-risk users who may need help
+    - Hibernating users to re-engage
+  </Accordion>
+</AccordionGroup>
+
+## Privacy Considerations
+
+- Analytics extracts insights, not raw conversation content
+- Conversation text is not stored in analytics tables
+- Users can opt out of analytics at the account level
+- All data is encrypted at rest and in transit
+
+## Troubleshooting
+
+### Analytics Not Generated
+
+- **Check queue**: Verify conversations are being queued
+- **Check worker**: Ensure the analytics worker is running
+- **Review logs**: Look for errors in the worker logs
+- **Verify settings**: Ensure analytics is enabled globally
+
+### Inaccurate Sentiment
+
+- **Context matters**: The AI needs enough conversation context
+- **Check message count**: Very short conversations may not generate meaningful sentiment
+- **Review frustration signals**: Compare AI assessment with actual conversation
+
+### Missing Use Cases
+
+- **Verify categorization**: Check if the AI chose an existing category or created a new one
+- **Check "is_useful" flag**: Casual conversations are marked as not useful
+- **Review categories**: Ensure default categories match your use cases
+
+## API Reference
+
+While analytics are primarily internal, you can access insights through:
+
+- **Database queries**: Query `conversation_analytics` table
+- **Custom endpoints**: Build reporting endpoints as needed
+- **RFM API**: Use the RFM calculation function in your code
+
+<Card title="See also" icon="link">
+  - [Memory System](/features/memory)
+  - [Agent Concepts](/concepts/agents)
+  - [Conversation Threads](/concepts/threads)
+</Card>

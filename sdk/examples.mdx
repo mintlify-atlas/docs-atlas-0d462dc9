@@ -1,0 +1,580 @@
+---
+title: SDK Examples
+description: Real-world examples and use cases for the Kortix Python SDK
+---
+
+## Basic Agent Creation
+
+Create a simple agent and have a conversation.
+
+```python
+import asyncio
+from kortix import kortix
+
+async def basic_agent():
+    # Initialize client
+    client = kortix.Kortix(api_key="your-api-key")
+    
+    # Create agent
+    agent = await client.Agent.create(
+        name="My First Agent",
+        system_prompt="You are a helpful assistant."
+    )
+    
+    # Create thread
+    thread = await client.Thread.create()
+    
+    # Run agent
+    run = await agent.run("Hello! Tell me a joke.", thread)
+    
+    # Stream response
+    stream = await run.get_stream()
+    async for chunk in stream:
+        print(chunk, end="")
+    print()  # New line
+
+if __name__ == "__main__":
+    asyncio.run(basic_agent())
+```
+
+---
+
+## Using MCP Tools
+
+Connect an agent to a custom MCP server for specialized capabilities.
+
+### Create an MCP Server
+
+First, create a simple MCP server with FastMCP:
+
+```python mcp_server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="WeatherService")
+
+@mcp.tool
+async def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return f"The weather in {city} is sunny with a temperature of 72°F."
+
+@mcp.tool
+async def get_wind_direction(city: str) -> str:
+    """Get the wind direction for a city."""
+    return f"The wind in {city} is blowing from the north at 10 mph."
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+### Connect Agent to MCP Server
+
+```python
+import asyncio
+from kortix import kortix
+
+async def mcp_agent():
+    # Start your MCP server first (in a separate process or task)
+    # Then connect to it:
+    
+    mcp_tools = kortix.MCPTools(
+        endpoint="http://localhost:4000/mcp/",
+        name="Weather Service",
+        allowed_tools=["get_weather", "get_wind_direction"]
+    )
+    await mcp_tools.initialize()
+    
+    # Create client and agent
+    client = kortix.Kortix(api_key="your-api-key")
+    
+    agent = await client.Agent.create(
+        name="Weather Agent",
+        system_prompt="You provide weather information using the available tools.",
+        mcp_tools=[mcp_tools],
+        allowed_tools=["get_weather", "get_wind_direction"]
+    )
+    
+    # Create thread and ask about weather
+    thread = await client.Thread.create()
+    run = await agent.run("What's the weather and wind in San Francisco?", thread)
+    
+    # Stream the response
+    stream = await run.get_stream()
+    async for chunk in stream:
+        print(chunk, end="")
+
+if __name__ == "__main__":
+    asyncio.run(mcp_agent())
+```
+
+---
+
+## Using AgentPress Tools
+
+Create an agent with built-in tools for file operations and web browsing.
+
+```python
+import asyncio
+from kortix import kortix
+
+async def agentpress_tools_example():
+    client = kortix.Kortix(api_key="your-api-key")
+    
+    # Create agent with file and shell tools
+    agent = await client.Agent.create(
+        name="Code Helper",
+        system_prompt="You help with coding tasks. You can read/write files and run commands.",
+        mcp_tools=[
+            kortix.AgentPressTools.SB_FILES_TOOL,
+            kortix.AgentPressTools.SB_SHELL_TOOL,
+            kortix.AgentPressTools.WEB_SEARCH_TOOL
+        ]
+    )
+    
+    thread = await client.Thread.create(name="Coding Session")
+    
+    # Ask the agent to search and create a file
+    run = await agent.run(
+        "Search for the latest Python best practices and create a summary file.",
+        thread
+    )
+    
+    stream = await run.get_stream()
+    async for chunk in stream:
+        print(chunk, end="")
+
+if __name__ == "__main__":
+    asyncio.run(agentpress_tools_example())
+```
+
+---
+
+## Multi-Turn Conversation
+
+Maintain context across multiple agent interactions.
+
+```python
+import asyncio
+from kortix import kortix
+from kortix.utils import print_stream
+
+async def multi_turn_conversation():
+    client = kortix.Kortix(api_key="your-api-key")
+    
+    # Create agent
+    agent = await client.Agent.create(
+        name="Conversation Agent",
+        system_prompt="You are a helpful assistant that remembers context."
+    )
+    
+    # Create thread (maintains conversation history)
+    thread = await client.Thread.create(name="Extended Chat")
+    
+    # First message
+    print("User: My favorite color is blue.\n")
+    run1 = await agent.run("My favorite color is blue.", thread)
+    stream1 = await run1.get_stream()
+    await print_stream(stream1)
+    
+    print("\n" + "="*50 + "\n")
+    
+    # Second message - agent remembers context
+    print("User: What's my favorite color?\n")
+    run2 = await agent.run("What's my favorite color?", thread)
+    stream2 = await run2.get_stream()
+    await print_stream(stream2)
+    
+    # View all messages
+    messages = await thread.get_messages()
+    print(f"\nTotal messages in thread: {len(messages)}")
+
+if __name__ == "__main__":
+    asyncio.run(multi_turn_conversation())
+```
+
+---
+
+## Reusing Agents and Threads
+
+Store and reuse agent and thread IDs across sessions.
+
+```python
+import asyncio
+import json
+import os
+from kortix import kortix
+
+class SessionStore:
+    """Simple key-value store for persisting IDs."""
+    
+    def __init__(self, filename=".session.json"):
+        self.filename = filename
+        self._data = self._load()
+    
+    def _load(self):
+        if os.path.exists(self.filename):
+            with open(self.filename, "r") as f:
+                return json.load(f)
+        return {}
+    
+    def _save(self):
+        with open(self.filename, "w") as f:
+            json.dump(self._data, f, indent=2)
+    
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+    
+    def set(self, key, value):
+        self._data[key] = value
+        self._save()
+
+async def reuse_session():
+    client = kortix.Kortix(api_key="your-api-key")
+    store = SessionStore()
+    
+    # Get or create agent
+    agent_id = store.get("agent_id")
+    if agent_id:
+        print(f"Reusing existing agent: {agent_id}")
+        agent = await client.Agent.get(agent_id)
+    else:
+        print("Creating new agent...")
+        agent = await client.Agent.create(
+            name="Persistent Agent",
+            system_prompt="You are a helpful assistant."
+        )
+        store.set("agent_id", agent._agent_id)
+    
+    # Get or create thread
+    thread_id = store.get("thread_id")
+    if thread_id:
+        print(f"Reusing existing thread: {thread_id}")
+        thread = await client.Thread.get(thread_id)
+    else:
+        print("Creating new thread...")
+        thread = await client.Thread.create()
+        store.set("thread_id", thread._thread_id)
+    
+    # Continue conversation
+    run = await agent.run("Continue our previous conversation.", thread)
+    stream = await run.get_stream()
+    async for chunk in stream:
+        print(chunk, end="")
+
+if __name__ == "__main__":
+    asyncio.run(reuse_session())
+```
+
+---
+
+## Full Example with MCP Server
+
+Complete example showing MCP server setup and agent integration.
+
+```python example.py
+import asyncio
+import os
+from kortix import kortix
+from kortix.utils import print_stream
+
+# Assuming you have mcp_server.py and kv.py in the same directory
+from mcp_server import mcp
+from kv import kv
+
+async def main():
+    """
+    Complete example with MCP server, agent creation, and streaming.
+    """
+    
+    # Start the MCP server in the background
+    asyncio.create_task(
+        mcp.run_http_async(
+            show_banner=False,
+            log_level="error",
+            host="0.0.0.0",
+            port=4000
+        )
+    )
+    
+    # Wait a moment for server to start
+    await asyncio.sleep(1)
+    
+    # Create MCP tools client
+    mcp_tools = kortix.MCPTools(
+        "http://localhost:4000/mcp/",
+        "Kortix",
+        allowed_tools=["get_wind_direction"]
+    )
+    await mcp_tools.initialize()
+    
+    # Initialize Kortix client
+    kortix_client = kortix.Kortix(
+        api_key=os.getenv("KORTIX_API_KEY", "pk_xxx:sk_xxx"),
+        api_url="https://api.kortix.com/v1"
+    )
+    
+    # Setup the agent (reuse if exists)
+    agent_id = kv.get("agent_id")
+    if not agent_id:
+        agent = await kortix_client.Agent.create(
+            name="Generic Agent",
+            system_prompt="You are a generic agent. You can use the tools provided to answer questions.",
+            mcp_tools=[mcp_tools],
+            allowed_tools=["get_weather"]
+        )
+        kv.set("agent_id", agent._agent_id)
+    else:
+        agent = await kortix_client.Agent.get(agent_id)
+        await agent.update(allowed_tools=["get_weather"])
+    
+    # Setup the thread (reuse if exists)
+    thread_id = kv.get("thread_id")
+    if not thread_id:
+        thread = await kortix_client.Thread.create()
+        kv.set("thread_id", thread._thread_id)
+    else:
+        thread = await kortix_client.Thread.get(thread_id)
+    
+    # Run the agent
+    agent_run = await agent.run(
+        "What is the wind direction in Bangalore?",
+        thread
+    )
+    
+    # Stream and print the response
+    stream = await agent_run.get_stream()
+    await print_stream(stream)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Supporting Files
+
+<CodeGroup>
+
+```python kv.py
+import json
+import os
+from typing import Any, Optional
+from dotenv import load_dotenv
+
+load_dotenv("./.env")
+
+class LocalKVStore:
+    """Local key-value store for storing agent and thread IDs."""
+    
+    def __init__(self, filename: str = ".kvstore.json"):
+        self.filename = filename
+        self._data = {}
+        self._load()
+    
+    def _load(self):
+        if os.path.exists(self.filename):
+            try:
+                with open(self.filename, "r", encoding="utf-8") as f:
+                    self._data = json.load(f)
+            except Exception:
+                self._data = {}
+        else:
+            self._data = {}
+    
+    def _save(self):
+        with open(self.filename, "w", encoding="utf-8") as f:
+            json.dump(self._data, f, indent=2)
+    
+    def get(self, key: str, default: Optional[Any] = None) -> Any:
+        return self._data.get(key, default)
+    
+    def set(self, key: str, value: Any):
+        self._data[key] = value
+        self._save()
+    
+    def delete(self, key: str):
+        if key in self._data:
+            del self._data[key]
+            self._save()
+    
+    def clear(self):
+        self._data = {}
+        self._save()
+
+kv = LocalKVStore()
+```
+
+```python mcp_server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="Kortix")
+
+@mcp.tool
+async def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    return f"The weather in {city} is windy."
+
+@mcp.tool
+async def get_wind_direction(city: str) -> str:
+    """Get the wind direction for a city."""
+    return f"The wind direction in {city} is from the north."
+```
+
+</CodeGroup>
+
+---
+
+## Error Handling Example
+
+Properly handle errors when working with the SDK.
+
+```python
+import asyncio
+import httpx
+from kortix import kortix
+
+async def error_handling_example():
+    client = kortix.Kortix(api_key="your-api-key")
+    
+    try:
+        # Attempt to create an agent
+        agent = await client.Agent.create(
+            name="Test Agent",
+            system_prompt="You are a test agent."
+        )
+        print(f"Agent created: {agent._agent_id}")
+        
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP Error: {e.response.status_code}")
+        print(f"Details: {e.response.text}")
+        
+    except ValueError as e:
+        print(f"Invalid value: {e}")
+        
+    except Exception as e:
+        print(f"Unexpected error: {type(e).__name__}: {e}")
+    
+    try:
+        # Attempt to get a non-existent agent
+        agent = await client.Agent.get("invalid_id")
+        
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            print("Agent not found")
+        else:
+            print(f"Error: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(error_handling_example())
+```
+
+---
+
+## Updating Agent Configuration
+
+Modify an agent's behavior and tools dynamically.
+
+```python
+import asyncio
+from kortix import kortix
+
+async def update_agent_example():
+    client = kortix.Kortix(api_key="your-api-key")
+    
+    # Create initial agent
+    agent = await client.Agent.create(
+        name="Assistant",
+        system_prompt="You are a general assistant.",
+        mcp_tools=[kortix.AgentPressTools.WEB_SEARCH_TOOL]
+    )
+    
+    print("Initial agent created")
+    
+    # Update the agent's system prompt and tools
+    await agent.update(
+        system_prompt="You are now a coding assistant specialized in Python.",
+        mcp_tools=[
+            kortix.AgentPressTools.SB_FILES_TOOL,
+            kortix.AgentPressTools.SB_SHELL_TOOL,
+        ],
+        allowed_tools=["sb_files_tool", "sb_shell_tool"]
+    )
+    
+    print("Agent updated with new configuration")
+    
+    # Get updated details
+    details = await agent.details()
+    print(f"Agent name: {details.name}")
+    print(f"System prompt: {details.system_prompt}")
+
+if __name__ == "__main__":
+    asyncio.run(update_agent_example())
+```
+
+---
+
+## Running Multiple Agents in Parallel
+
+Execute multiple agents concurrently for different tasks.
+
+```python
+import asyncio
+from kortix import kortix
+
+async def parallel_agents():
+    client = kortix.Kortix(api_key="your-api-key")
+    
+    # Create multiple agents
+    research_agent = await client.Agent.create(
+        name="Research Agent",
+        system_prompt="You research topics.",
+        mcp_tools=[kortix.AgentPressTools.WEB_SEARCH_TOOL]
+    )
+    
+    code_agent = await client.Agent.create(
+        name="Code Agent",
+        system_prompt="You help with coding.",
+        mcp_tools=[kortix.AgentPressTools.SB_FILES_TOOL]
+    )
+    
+    # Create threads
+    research_thread = await client.Thread.create(name="Research")
+    code_thread = await client.Thread.create(name="Coding")
+    
+    # Run agents in parallel
+    async def run_research():
+        run = await research_agent.run(
+            "Research the latest in AI development",
+            research_thread
+        )
+        stream = await run.get_stream()
+        print("\n=== RESEARCH AGENT ===")
+        async for chunk in stream:
+            print(chunk, end="")
+    
+    async def run_coding():
+        run = await code_agent.run(
+            "Write a simple Python hello world script",
+            code_thread
+        )
+        stream = await run.get_stream()
+        print("\n=== CODE AGENT ===")
+        async for chunk in stream:
+            print(chunk, end="")
+    
+    # Execute both agents concurrently
+    await asyncio.gather(run_research(), run_coding())
+
+if __name__ == "__main__":
+    asyncio.run(parallel_agents())
+```
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SDK Overview" icon="book" href="/sdk/overview">
+    Learn about SDK concepts and architecture
+  </Card>
+  <Card title="Python SDK Reference" icon="code" href="/sdk/python">
+    Complete API reference documentation
+  </Card>
+</CardGroup>

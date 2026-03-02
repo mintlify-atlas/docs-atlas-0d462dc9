@@ -1,0 +1,499 @@
+---
+title: Python SDK Reference
+description: Complete API reference for the Kortix Python SDK
+---
+
+## Kortix Client
+
+The main entry point for the SDK.
+
+### Kortix
+
+```python
+from kortix import kortix
+
+client = kortix.Kortix(api_key: str, api_url: str = "https://api.kortix.com/v1")
+```
+
+<ParamField path="api_key" type="string" required>
+  Your Kortix API key from [settings/api-keys](https://www.kortix.com/settings/api-keys)
+</ParamField>
+
+<ParamField path="api_url" type="string" default="https://api.kortix.com/v1">
+  The API base URL. Override for local development or custom deployments.
+</ParamField>
+
+**Properties:**
+
+- `client.Agent`: Agent management interface
+- `client.Thread`: Thread management interface
+
+---
+
+## Agent Management
+
+Create and manage AI agents.
+
+### Agent.create()
+
+Create a new agent with specified configuration.
+
+```python
+agent = await client.Agent.create(
+    name: str,
+    system_prompt: str,
+    mcp_tools: list[KortixTools] = [],
+    allowed_tools: list[str] | None = None
+) -> Agent
+```
+
+<ParamField path="name" type="string" required>
+  A friendly name for the agent
+</ParamField>
+
+<ParamField path="system_prompt" type="string" required>
+  Instructions that define the agent's behavior and personality
+</ParamField>
+
+<ParamField path="mcp_tools" type="list[KortixTools]" default="[]">
+  List of tools (MCPTools or AgentPressTools) the agent can use
+</ParamField>
+
+<ParamField path="allowed_tools" type="list[str] | None" default="None">
+  Specific tool names to enable. If None, all tools are enabled.
+</ParamField>
+
+**Returns:** `Agent` instance
+
+**Example:**
+
+```python
+agent = await client.Agent.create(
+    name="Research Assistant",
+    system_prompt="You are a research assistant that helps find and summarize information.",
+    mcp_tools=[kortix.AgentPressTools.WEB_SEARCH_TOOL],
+    allowed_tools=["web_search_tool"]
+)
+```
+
+### Agent.get()
+
+Retrieve an existing agent by ID.
+
+```python
+agent = await client.Agent.get(agent_id: str) -> Agent
+```
+
+<ParamField path="agent_id" type="string" required>
+  The unique identifier of the agent
+</ParamField>
+
+**Returns:** `Agent` instance
+
+**Example:**
+
+```python
+agent = await client.Agent.get("agent_abc123")
+```
+
+---
+
+## Agent Instance
+
+An Agent instance provides methods to interact with a specific agent.
+
+### agent.run()
+
+Execute the agent with a prompt on a thread.
+
+```python
+run = await agent.run(
+    prompt: str,
+    thread: Thread,
+    model: str | None = None
+) -> AgentRun
+```
+
+<ParamField path="prompt" type="string" required>
+  The user message/prompt to send to the agent
+</ParamField>
+
+<ParamField path="thread" type="Thread" required>
+  The thread context for the conversation
+</ParamField>
+
+<ParamField path="model" type="string" default="anthropic/claude-sonnet-4-20250514">
+  Override the model for this specific run
+</ParamField>
+
+**Returns:** `AgentRun` instance
+
+**Example:**
+
+```python
+thread = await client.Thread.create()
+run = await agent.run("What's the weather like?", thread)
+```
+
+### agent.update()
+
+Update agent configuration.
+
+```python
+await agent.update(
+    name: str | None = None,
+    system_prompt: str | None = None,
+    mcp_tools: list[KortixTools] | None = None,
+    allowed_tools: list[str] | None = None
+)
+```
+
+<ParamField path="name" type="string" optional>
+  New name for the agent
+</ParamField>
+
+<ParamField path="system_prompt" type="string" optional>
+  New system prompt
+</ParamField>
+
+<ParamField path="mcp_tools" type="list[KortixTools]" optional>
+  New list of tools
+</ParamField>
+
+<ParamField path="allowed_tools" type="list[str]" optional>
+  New list of allowed tool names
+</ParamField>
+
+**Example:**
+
+```python
+await agent.update(
+    system_prompt="You are now a coding assistant.",
+    allowed_tools=["sb_files_tool", "sb_shell_tool"]
+)
+```
+
+### agent.details()
+
+Get detailed information about the agent.
+
+```python
+details = await agent.details() -> AgentResponse
+```
+
+**Returns:** `AgentResponse` with complete agent configuration
+
+---
+
+## Thread Management
+
+Create and manage conversation threads.
+
+### Thread.create()
+
+Create a new conversation thread.
+
+```python
+thread = await client.Thread.create(name: str | None = None) -> Thread
+```
+
+<ParamField path="name" type="string" optional>
+  Optional name for the thread/project
+</ParamField>
+
+**Returns:** `Thread` instance
+
+**Example:**
+
+```python
+thread = await client.Thread.create(name="Customer Support Chat")
+```
+
+### Thread.get()
+
+Retrieve an existing thread by ID.
+
+```python
+thread = await client.Thread.get(thread_id: str) -> Thread
+```
+
+<ParamField path="thread_id" type="string" required>
+  The unique identifier of the thread
+</ParamField>
+
+**Returns:** `Thread` instance
+
+### Thread.delete()
+
+Delete a thread.
+
+```python
+await client.Thread.delete(thread_id: str)
+```
+
+<ParamField path="thread_id" type="string" required>
+  The unique identifier of the thread to delete
+</ParamField>
+
+---
+
+## Thread Instance
+
+A Thread instance provides methods to interact with a specific thread.
+
+### thread.add_message()
+
+Add a message to the thread.
+
+```python
+message_id = await thread.add_message(message: str) -> str
+```
+
+<ParamField path="message" type="string" required>
+  The message content to add
+</ParamField>
+
+**Returns:** Message ID (string)
+
+**Example:**
+
+```python
+message_id = await thread.add_message("Hello, agent!")
+```
+
+### thread.del_message()
+
+Delete a message from the thread.
+
+```python
+await thread.del_message(message_id: str)
+```
+
+<ParamField path="message_id" type="string" required>
+  The ID of the message to delete
+</ParamField>
+
+### thread.get_messages()
+
+Retrieve all messages in the thread.
+
+```python
+messages = await thread.get_messages() -> list[Message]
+```
+
+**Returns:** List of `Message` objects
+
+**Example:**
+
+```python
+messages = await thread.get_messages()
+for msg in messages:
+    print(f"{msg.type}: {msg.content}")
+```
+
+### thread.get_agent_runs()
+
+Get all agent runs for this thread.
+
+```python
+runs = await thread.get_agent_runs() -> list[AgentRun] | None
+```
+
+**Returns:** List of `AgentRun` objects or None if no runs exist
+
+---
+
+## Agent Run
+
+Represents an execution of an agent.
+
+### run.get_stream()
+
+Get a stream of the agent's response.
+
+```python
+stream = await run.get_stream() -> AsyncGenerator[str, None]
+```
+
+**Returns:** Async generator yielding response chunks
+
+**Example:**
+
+```python
+stream = await run.get_stream()
+async for chunk in stream:
+    print(chunk, end="")
+```
+
+---
+
+## Tools
+
+### MCPTools
+
+Connect to custom MCP (Model Context Protocol) servers.
+
+```python
+from kortix import kortix
+
+mcp_tools = kortix.MCPTools(
+    endpoint: str,
+    name: str,
+    allowed_tools: list[str] | None = None
+)
+await mcp_tools.initialize()
+```
+
+<ParamField path="endpoint" type="string" required>
+  The HTTP URL of the MCP server (e.g., "http://localhost:4000/mcp/")
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  A friendly name for this MCP server
+</ParamField>
+
+<ParamField path="allowed_tools" type="list[str]" optional>
+  Specific tool names to enable from this server
+</ParamField>
+
+**Properties:**
+- `url`: The MCP server endpoint
+- `name`: The server name
+- `type`: Always "http"
+- `enabled_tools`: List of enabled tool names
+
+**Example:**
+
+```python
+mcp_tools = kortix.MCPTools(
+    "http://localhost:4000/mcp/",
+    "Weather Service",
+    allowed_tools=["get_weather", "get_forecast"]
+)
+await mcp_tools.initialize()
+
+agent = await client.Agent.create(
+    name="Weather Agent",
+    system_prompt="You provide weather information.",
+    mcp_tools=[mcp_tools]
+)
+```
+
+### AgentPressTools
+
+Built-in tools provided by Kortix.
+
+```python
+from kortix import kortix
+
+# Available tools:
+kortix.AgentPressTools.SB_FILES_TOOL        # Read, write, and edit files
+kortix.AgentPressTools.SB_SHELL_TOOL        # Execute shell commands
+kortix.AgentPressTools.SB_EXPOSE_TOOL       # Expose local services to the internet
+kortix.AgentPressTools.SB_GIT_SYNC          # Sync files with Git repositories
+kortix.AgentPressTools.SB_VISION_TOOL       # Analyze and understand images
+kortix.AgentPressTools.BROWSER_TOOL         # Browse websites and interact with web pages
+kortix.AgentPressTools.WEB_SEARCH_TOOL      # Search the web for information
+```
+
+**Example:**
+
+```python
+agent = await client.Agent.create(
+    name="Code Assistant",
+    system_prompt="You help with coding tasks.",
+    mcp_tools=[
+        kortix.AgentPressTools.SB_FILES_TOOL,
+        kortix.AgentPressTools.SB_SHELL_TOOL,
+        kortix.AgentPressTools.SB_GIT_SYNC
+    ],
+    allowed_tools=["sb_files_tool", "sb_shell_tool"]
+)
+```
+
+---
+
+## Data Models
+
+### Message
+
+Represents a message in a thread.
+
+**Properties:**
+- `message_id` (str): Unique message identifier
+- `thread_id` (str): Parent thread ID
+- `type` (MessageType): Type of message (user, assistant, tool, status)
+- `is_llm_message` (bool): Whether this is an LLM-generated message
+- `content` (Any): Message content (varies by type)
+- `created_at` (str): Creation timestamp
+- `updated_at` (str): Last update timestamp
+- `metadata` (Any): Additional metadata
+
+**Methods:**
+- `message.is_user_message` (bool): Check if user message
+- `message.is_assistant_message` (bool): Check if assistant message
+- `message.get_content_as_string()` (str): Get content as string
+
+### MessageType
+
+Enum of message types:
+- `MessageType.USER`: User message
+- `MessageType.ASSISTANT`: Assistant message
+- `MessageType.TOOL`: Tool result
+- `MessageType.STATUS`: Status update
+- `MessageType.ASSISTANT_RESPONSE_END`: End of assistant response
+
+### Role
+
+Enum of message roles:
+- `Role.USER`: User role
+- `Role.ASSISTANT`: Assistant role
+- `Role.SYSTEM`: System role
+
+---
+
+## Utilities
+
+### print_stream()
+
+Utility function to print agent response streams with formatting.
+
+```python
+from kortix.utils import print_stream
+
+stream = await run.get_stream()
+await print_stream(stream)
+```
+
+This utility provides:
+- Colored output for different event types
+- Tool usage detection and display
+- XML formatting for structured content
+- Progress indicators
+
+---
+
+## Type Hints
+
+The SDK uses Union types for flexibility:
+
+```python
+KortixTools = Union[AgentPressTools, MCPTools]
+```
+
+This allows passing either built-in AgentPress tools or custom MCP tools to agent creation methods.
+
+---
+
+## Async Context Managers
+
+For proper resource cleanup, you can use async context managers:
+
+```python
+async with kortix.Kortix(api_key="your-key") as client:
+    agent = await client.Agent.create(
+        name="Test",
+        system_prompt="Test agent"
+    )
+    # Client will be automatically closed
+```

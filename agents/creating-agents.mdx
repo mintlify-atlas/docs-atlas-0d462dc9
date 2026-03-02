@@ -1,0 +1,287 @@
+---
+title: Creating Agents
+description: Learn how to create and configure AI agents in Kortix using the UI or API
+---
+
+Agents in Kortix are autonomous AI workers that can be customized with specific capabilities, tools, and behaviors. This guide shows you how to create agents using both the web interface and API.
+
+## Overview
+
+Every agent in Kortix consists of:
+- **Name and Icon**: Visual identification for your agent
+- **System Prompt**: Instructions that define the agent's behavior and capabilities
+- **Model**: The AI model powering the agent (e.g., `claude-4.5-sonnet`, `gpt-4o`)
+- **Tools**: Integrations and capabilities available to the agent
+- **Triggers**: Automated workflows that start the agent
+
+## Creating an Agent via UI
+
+<Steps>
+  <Step title="Open Agent Creation Dialog">
+    Navigate to the Agents page and click **Create Worker**. You'll see three options:
+    
+    - **Configure Manually**: Full control over every setting
+    - **Configure by Chat**: Let AI set it up based on your description
+    - **Explore Templates**: Start from a pre-built worker template
+  </Step>
+
+  <Step title="Choose Your Creation Method">
+    <Tabs>
+      <Tab title="Manual Configuration">
+        Select **Configure Manually** to create an agent with default settings that you can customize later.
+        
+        This creates a basic agent with:
+        - Default Suna system prompt
+        - Your account's default model
+        - Core AgentPress tools enabled
+        - No MCP integrations
+      </Tab>
+      
+      <Tab title="Chat-Based Setup">
+        Select **Configure by Chat** and describe what your agent should do:
+        
+        ```text
+        A worker that monitors competitor prices and sends me daily reports
+        ```
+        
+        The AI will automatically:
+        - Generate an appropriate name
+        - Create a tailored system prompt
+        - Enable relevant tools
+        - Configure necessary integrations
+      </Tab>
+      
+      <Tab title="Template Installation">
+        Browse the template marketplace and install a pre-configured agent:
+        
+        1. Click **Explore Templates**
+        2. Browse Kortix team templates or community templates
+        3. Click on a template to preview
+        4. Click **Install** to add it to your workspace
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Customize Your Agent">
+    After creation, navigate to the agent's configuration page to customize:
+    
+    - **Name & Icon**: Update visual branding
+    - **System Prompt**: Define behavior and instructions
+    - **Model**: Choose the AI model
+    - **Tools**: Enable AgentPress tools and MCP integrations
+    - **Triggers**: Set up automated workflows
+  </Step>
+</Steps>
+
+## Creating an Agent via API
+
+Use the `/agents` endpoint to programmatically create agents.
+
+<CodeGroup>
+```python Python
+import requests
+
+url = "https://api.kortix.com/agents"
+headers = {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+}
+
+payload = {
+    "name": "Sales Assistant",
+    "icon_name": "user-check",
+    "icon_color": "#3B82F6",
+    "icon_background": "#EFF6FF",
+    "is_default": False
+}
+
+response = requests.post(url, json=payload, headers=headers)
+agent = response.json()
+
+print(f"Created agent: {agent['agent_id']}")
+print(f"Version: {agent['current_version']['version_name']}")
+```
+
+```typescript TypeScript
+const response = await fetch('https://api.kortix.com/agents', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    name: 'Sales Assistant',
+    icon_name: 'user-check',
+    icon_color: '#3B82F6',
+    icon_background: '#EFF6FF',
+    is_default: false
+  })
+});
+
+const agent = await response.json();
+console.log(`Created agent: ${agent.agent_id}`);
+```
+
+```bash cURL
+curl -X POST https://api.kortix.com/agents \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Sales Assistant",
+    "icon_name": "user-check",
+    "icon_color": "#3B82F6",
+    "icon_background": "#EFF6FF",
+    "is_default": false
+  }'
+```
+</CodeGroup>
+
+### API Response
+
+The API returns a complete agent object with initial version:
+
+```json
+{
+  "agent_id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Sales Assistant",
+  "account_id": "user-123",
+  "icon_name": "user-check",
+  "icon_color": "#3B82F6",
+  "icon_background": "#EFF6FF",
+  "is_default": false,
+  "current_version_id": "ver-001",
+  "version_count": 1,
+  "current_version": {
+    "version_id": "ver-001",
+    "version_number": 1,
+    "version_name": "v1",
+    "system_prompt": "You are Kortix, an autonomous AI Worker...",
+    "model": "kortix/basic",
+    "agentpress_tools": {
+      "sb_files_tool": { "enabled": true },
+      "sb_shell_tool": { "enabled": true },
+      "message_tool": { "enabled": true }
+    },
+    "configured_mcps": [],
+    "custom_mcps": []
+  },
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+## Updating Agent Configuration
+
+Update agent properties using the `PUT /agents/{agent_id}` endpoint:
+
+<CodeGroup>
+```python Python
+import requests
+
+agent_id = "550e8400-e29b-41d4-a716-446655440000"
+url = f"https://api.kortix.com/agents/{agent_id}"
+
+payload = {
+    "name": "Senior Sales Assistant",
+    "is_default": True,
+    "system_prompt": "You are a sales expert focused on B2B SaaS deals...",
+    "model": "anthropic/claude-4.5-sonnet",
+    "agentpress_tools": {
+        "sb_files_tool": { "enabled": True },
+        "web_search_tool": { "enabled": True },
+        "message_tool": { "enabled": True }
+    }
+}
+
+response = requests.put(url, json=payload, headers=headers)
+updated_agent = response.json()
+
+print(f"Updated to version: {updated_agent['current_version']['version_name']}")
+```
+
+```typescript TypeScript
+const agentId = '550e8400-e29b-41d4-a716-446655440000';
+
+const response = await fetch(`https://api.kortix.com/agents/${agentId}`, {
+  method: 'PUT',
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    name: 'Senior Sales Assistant',
+    is_default: true,
+    system_prompt: 'You are a sales expert focused on B2B SaaS deals...',
+    model: 'anthropic/claude-4.5-sonnet',
+    agentpress_tools: {
+      sb_files_tool: { enabled: true },
+      web_search_tool: { enabled: true },
+      message_tool: { enabled: true }
+    }
+  })
+});
+```
+</CodeGroup>
+
+<Note>
+**Version Control**: Configuration changes (system prompt, model, tools) automatically create new versions. Metadata changes (name, icon) update the agent without creating versions.
+</Note>
+
+## Agent Limits
+
+Agent creation is subject to subscription tier limits:
+
+| Tier | Agent Limit |
+|------|-------------|
+| Free | 3 agents |
+| Pro | 10 agents |
+| Team | 50 agents |
+| Enterprise | Unlimited |
+
+### Handling Limit Errors
+
+When you reach your agent limit, the API returns a `402` status:
+
+```json
+{
+  "detail": {
+    "message": "Maximum of 3 agents allowed for your current plan. You have 3 agents.",
+    "current_count": 3,
+    "limit": 3,
+    "tier_name": "free",
+    "error_code": "AGENT_LIMIT_EXCEEDED"
+  }
+}
+```
+
+## Default Agents
+
+Set an agent as default to use it automatically in new conversations:
+
+```python
+response = requests.put(
+    f"https://api.kortix.com/agents/{agent_id}",
+    json={"is_default": True},
+    headers=headers
+)
+```
+
+<Warning>
+Setting an agent as default automatically clears the default flag from other agents.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Builder UI" icon="palette" href="/agents/agent-builder">
+    Configure agents using the visual interface
+  </Card>
+  <Card title="System Prompts" icon="file-lines" href="/agents/system-prompts">
+    Write effective system prompts
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/agents/workflows">
+    Set up automated triggers
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/agents/create">
+    Full API documentation
+  </Card>
+</CardGroup>

@@ -1,0 +1,473 @@
+---
+title: Code Execution
+description: Run Python, JavaScript, shell commands, and other code in a secure sandboxed environment
+---
+
+## Overview
+
+Kortix agents execute code in isolated Daytona sandbox environments. Each project gets its own dedicated sandbox with a full Linux environment, enabling agents to run scripts, process data, interact with APIs, and build applications safely.
+
+The sandbox provides a complete development environment with pre-installed tools, persistent storage in `/workspace`, and automatic resource management.
+
+## Sandbox Architecture
+
+From the source code (`sandbox.py:1-145`):
+
+```python
+from daytona_sdk import AsyncDaytona, DaytonaConfig, CreateSandboxFromSnapshotParams
+
+daytona_config = DaytonaConfig(
+    api_key=config.DAYTONA_API_KEY,
+    api_url=config.DAYTONA_SERVER_URL, 
+    target=config.DAYTONA_TARGET,
+)
+
+daytona = AsyncDaytona(daytona_config)
+```
+
+### Sandbox Lifecycle
+
+Sandboxes are created from snapshots with pre-configured services:
+
+```python
+async def create_sandbox(password: str, project_id: str = None) -> AsyncSandbox:
+    """Create a new sandbox with all required services configured and running."""
+    
+    params = CreateSandboxFromSnapshotParams(
+        snapshot=Configuration.SANDBOX_SNAPSHOT_NAME,
+        public=True,
+        labels={'id': project_id} if project_id else None,
+        env_vars={
+            "CHROME_PERSISTENT_SESSION": "true",
+            "RESOLUTION": "1048x768x24",
+            "VNC_PASSWORD": password,
+            "CHROME_DEBUGGING_PORT": "9222",
+        },
+        auto_stop_interval=15,    # Stop after 15 min idle
+        auto_archive_interval=30,  # Archive after 30 min
+    )
+    
+    sandbox = await daytona.create(params)
+    return sandbox
+```
+
+### State Management
+
+From `sandbox.py:34-66`:
+
+```python
+async def get_or_start_sandbox(sandbox_id: str) -> AsyncSandbox:
+    """Retrieve a sandbox by ID, check its state, and start it if needed."""
+    
+    sandbox = await daytona.get(sandbox_id)
+    
+    # Check if sandbox needs to be started
+    if sandbox.state in [SandboxState.ARCHIVED, SandboxState.STOPPED, SandboxState.ARCHIVING]:
+        logger.info(f"Sandbox is in {sandbox.state} state. Starting...")
+        await daytona.start(sandbox)
+        
+        # Wait for sandbox to reach STARTED state
+        for _ in range(30):
+            await asyncio.sleep(1)
+            sandbox = await daytona.get(sandbox_id)
+            if sandbox.state == SandboxState.STARTED:
+                break
+        
+        # Start supervisord when restarting
+        await start_supervisord_session(sandbox)
+    
+    return sandbox
+```
+
+## Sandbox Tool Base
+
+All tools inherit from `SandboxToolsBase` (`tool_base.py:13-84`):
+
+```python
+class SandboxToolsBase(Tool):
+    def __init__(self, project_id: str, thread_manager: Optional['ThreadManager'] = None):
+        super().__init__()
+        self.project_id = project_id
+        self.thread_manager = thread_manager
+        self.workspace_path = "/workspace"
+        self._sandbox_info: Optional[SandboxInfo] = None
+
+    async def _ensure_sandbox(self) -> AsyncSandbox:
+        """Ensure sandbox is initialized and ready."""
+        if self._sandbox_info is None:
+            sandbox_info = await resolve_sandbox(
+                project_id=self.project_id,
+                account_id=account_id,
+                db_client=client,
+                require_started=True
+            )
+            self._sandbox_info = sandbox_info
+        return self._sandbox_info.sandbox
+```
+
+## Code Execution Methods
+
+### Command Execution
+
+Agents can run shell commands using the Bash tool:
+
+```python
+# Run Python script
+result = await sandbox.process.exec(
+    "python script.py",
+    timeout=120
+)
+
+# Run with environment variables
+result = await sandbox.process.exec(
+    "npm run build",
+    env={"NODE_ENV": "production"},
+    timeout=300
+)
+```
+
+### Working Directory
+
+All code executes with `/workspace` as the persistent working directory:
+
+```python
+@property
+def workspace_path(self) -> str:
+    return "/workspace"
+
+def clean_path(self, path: str) -> str:
+    """Clean and normalize paths relative to /workspace"""
+    return clean_path(path, self.workspace_path)
+```
+
+### Session Management
+
+Long-running services use supervisord:
+
+```python
+async def start_supervisord_session(sandbox: AsyncSandbox):
+    """Start supervisord in a session."""
+    session_id = "supervisord-session"
+    try:
+        await sandbox.process.create_session(session_id)
+        await sandbox.process.execute_session_command(
+            session_id,
+            SessionExecuteRequest(
+                command="exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf",
+                var_async=True
+            )
+        )
+    except Exception as e:
+        logger.warning(f"Could not start supervisord: {str(e)}")
+```
+
+## Real-World Examples
+
+### Example 1: Python Data Processing
+
+```python
+# Create Python script
+create_file(
+    file_path="process_data.py",
+    file_contents="""
+import pandas as pd
+import json
+
+# Load data
+df = pd.read_csv('/workspace/data.csv')
+
+# Process
+results = df.groupby('category').agg({
+    'value': ['sum', 'mean', 'count']
+}).to_dict()
+
+# Save results
+with open('/workspace/results.json', 'w') as f:
+    json.dump(results, f, indent=2)
+
+print('Processing complete')
+"""
+)
+
+# Execute script
+result = bash("python /workspace/process_data.py")
+
+# Read results
+results = read_file("results.json")
+```
+
+### Example 2: API Integration
+
+```python
+# Create API client script
+create_file(
+    file_path="fetch_data.py",
+    file_contents="""
+import requests
+import os
+
+api_key = os.getenv('API_KEY')
+response = requests.get(
+    'https://api.example.com/data',
+    headers={'Authorization': f'Bearer {api_key}'}
+)
+
+with open('/workspace/api_response.json', 'w') as f:
+    f.write(response.text)
+"""
+)
+
+# Run with environment variables
+bash(
+    "python /workspace/fetch_data.py",
+    env={"API_KEY": "secret_key"}
+)
+```
+
+### Example 3: Build Process
+
+```python
+# Install dependencies
+bash("cd /workspace && npm install")
+
+# Run build
+bash(
+    "cd /workspace && npm run build",
+    env={"NODE_ENV": "production"},
+    timeout=300
+)
+
+# Check build output
+files = bash("ls -lh /workspace/dist")
+```
+
+### Example 4: Multi-Language Processing
+
+```python
+# JavaScript processing
+bash("node /workspace/transform.js")
+
+# Python analysis  
+bash("python /workspace/analyze.py")
+
+# Shell script orchestration
+bash("bash /workspace/pipeline.sh")
+```
+
+## Pre-installed Tools
+
+Sandboxes come with common development tools:
+
+- **Languages**: Python 3.11+, Node.js, Bash
+- **Package Managers**: pip, npm, apt
+- **Version Control**: git
+- **Utilities**: curl, wget, jq, zip/unzip
+- **Process Management**: supervisord
+- **Browser**: Chromium (for browser automation)
+
+## File System Access
+
+From `tool_base.py:56-84`:
+
+```python
+@property
+def sandbox(self) -> AsyncSandbox:
+    """Access the sandbox instance."""
+    if self._sandbox_info is None:
+        raise RuntimeError("Sandbox not initialized. Call _ensure_sandbox() first.")
+    return self._sandbox_info.sandbox
+
+@property
+def sandbox_url(self) -> str:
+    """Get public URL for the sandbox."""
+    if self._sandbox_info is None:
+        raise RuntimeError("Sandbox URL not initialized.")
+    return self._sandbox_info.sandbox_url or ""
+```
+
+File operations through the sandbox SDK:
+
+```python
+# Read file
+content = await sandbox.fs.download_file("/workspace/file.txt")
+
+# Write file
+await sandbox.fs.upload_file(
+    content.encode(),
+    "/workspace/output.txt"
+)
+
+# Create directory
+await sandbox.fs.create_folder("/workspace/data", "755")
+
+# Get file info
+file_info = await sandbox.fs.get_file_info("/workspace/file.txt")
+print(f"Size: {file_info.size}, Modified: {file_info.mod_time}")
+```
+
+## Network Access
+
+Sandboxes have full internet access:
+
+```python
+# Install packages
+bash("pip install requests pandas numpy")
+
+# Clone repositories
+bash("git clone https://github.com/user/repo.git /workspace/repo")
+
+# Download files
+bash("curl -o /workspace/data.json https://api.example.com/data")
+
+# API calls
+bash("curl -X POST https://api.example.com/endpoint -d @/workspace/payload.json")
+```
+
+## Resource Limits
+
+Sandboxes have resource constraints:
+
+```python
+resources=Resources(
+    cpu=2,      # 2 CPU cores
+    memory=4,   # 4 GB RAM
+    disk=5,     # 5 GB disk
+)
+```
+
+## Auto-Stop and Archiving
+
+From `sandbox.py:115-117`:
+
+```python
+auto_stop_interval=15,    # Stop after 15 minutes of inactivity
+auto_archive_interval=30,  # Archive after 30 minutes stopped
+```
+
+- **Auto-Stop**: Sandbox stops after 15 minutes of no activity to save resources
+- **Auto-Archive**: Stopped sandboxes archive after 30 minutes
+- **Resume**: Archived sandboxes automatically restart when accessed
+
+## Security Features
+
+### Isolation
+
+- Each project gets dedicated sandbox
+- No cross-project access
+- Isolated network namespace
+- Separate file systems
+
+### Environment Variables
+
+Secure credential handling:
+
+```python
+# Pass secrets via environment variables
+result = await sandbox.process.exec(
+    "python script.py",
+    env={
+        "DATABASE_URL": "postgresql://...",
+        "API_KEY": "secret_key"
+    }
+)
+```
+
+### Cleanup
+
+```python
+async def delete_sandbox(sandbox_id: str) -> bool:
+    """Delete a sandbox by its ID."""
+    sandbox = await daytona.get(sandbox_id)
+    await daytona.delete(sandbox)
+    return True
+```
+
+## Best Practices
+
+### 1. Use Workspace Path
+
+```python
+# ✅ GOOD: Use /workspace for persistence
+bash("python /workspace/script.py")
+
+# ❌ BAD: Temp directories may be cleared
+bash("python /tmp/script.py")
+```
+
+### 2. Handle Timeouts
+
+```python
+# Set appropriate timeout for long operations
+bash(
+    "npm run build",
+    timeout=300  # 5 minutes
+)
+```
+
+### 3. Check Exit Codes
+
+```python
+result = bash("python script.py")
+if result.exit_code != 0:
+    logger.error(f"Script failed: {result.stderr}")
+```
+
+### 4. Install Dependencies Once
+
+```python
+# Create requirements.txt
+create_file(
+    file_path="requirements.txt",
+    file_contents="pandas\nrequests\nnumpy"
+)
+
+# Install once
+bash("pip install -r /workspace/requirements.txt")
+
+# Packages persist across sessions
+```
+
+## Port Exposure
+
+Sandboxes can expose services:
+
+```python
+# Port 8080 is auto-exposed for web previews
+preview_url = await sandbox.get_preview_link(8080)
+print(f"Preview: {preview_url.url}")
+```
+
+HTTP servers on port 8080 are automatically accessible via public URL.
+
+## Monitoring and Debugging
+
+```python
+# Check sandbox state
+sandbox = await daytona.get(sandbox_id)
+print(f"State: {sandbox.state}")
+
+# View process output
+result = bash("ps aux")
+print(result.stdout)
+
+# Check disk usage
+disk = bash("df -h /workspace")
+```
+
+## Configuration
+
+Sandbox execution requires:
+
+```bash
+DAYTONA_API_KEY=your_api_key
+DAYTONA_SERVER_URL=https://api.daytona.io
+DAYTONA_TARGET=your_target
+```
+
+## Limitations
+
+- Command timeout: Default 120 seconds (configurable)
+- No root access (runs as unprivileged user)
+- No systemd (use supervisord instead)
+- Limited GPU access
+- Auto-stops after inactivity

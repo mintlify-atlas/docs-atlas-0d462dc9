@@ -1,0 +1,454 @@
+---
+title: Sandboxes
+description: Understanding the isolated execution environments for agents
+---
+
+## Overview
+
+Sandboxes are containerized Linux environments that provide agents with their own isolated computer to execute tasks, access the web, and manipulate files. Each sandbox is a full-featured development environment with pre-installed tools and services.
+
+## Sandbox Architecture
+
+### Technology Stack
+
+Sandboxes are powered by [Daytona](https://www.daytona.io/), which provides:
+
+- **Docker containers**: Isolated execution environments
+- **Resource management**: CPU, memory, and disk allocation
+- **Lifecycle management**: Start, stop, archive, and delete
+- **Network access**: Public endpoints for web servers
+
+```python
+# backend/core/sandbox/sandbox.py:11-32
+daytona_config = DaytonaConfig(
+    api_key=config.DAYTONA_API_KEY,
+    api_url=config.DAYTONA_SERVER_URL, 
+    target=config.DAYTONA_TARGET,
+)
+
+daytona = AsyncDaytona(daytona_config)
+```
+
+Reference: `backend/core/sandbox/sandbox.py:11-32`
+
+### Included Services
+
+Each sandbox includes:
+
+- **Chrome browser**: For web interactions and automation
+- **VNC server**: Remote desktop access for visual tasks
+- **Web server**: Serves content on port 8080 from `/workspace`
+- **Supervisord**: Process management for background services
+- **Full sudo access**: Complete system control
+
+Reference: `backend/core/sandbox/README.md:6-12`
+
+## Sandbox Lifecycle
+
+### 1. Creation
+
+Sandboxes are created from snapshots with pre-configured services:
+
+```python
+# backend/core/sandbox/sandbox.py:82-127
+async def create_sandbox(password: str, project_id: str = None) -> AsyncSandbox:
+    params = CreateSandboxFromSnapshotParams(
+        snapshot=Configuration.SANDBOX_SNAPSHOT_NAME,
+        public=True,
+        labels={'id': project_id} if project_id else None,
+        env_vars={
+            "CHROME_PERSISTENT_SESSION": "true",
+            "RESOLUTION": "1048x768x24",
+            "VNC_PASSWORD": password,
+            "CHROME_DEBUGGING_PORT": "9222",
+            # ... more environment variables
+        },
+        auto_stop_interval=15,  # Stop after 15min inactive
+        auto_archive_interval=30,  # Archive after 30min stopped
+    )
+    
+    sandbox = await daytona.create(params)
+    await start_supervisord_session(sandbox)
+    
+    return sandbox
+```
+
+Reference: `backend/core/sandbox/sandbox.py:82-127`
+
+### 2. Active State
+
+When a sandbox is active, agents can:
+
+- Execute shell commands
+- Read and write files
+- Run web servers
+- Access the internet
+- Use Chrome for web automation
+- Display visual content via VNC
+
+### 3. Stopped State
+
+Sandboxes automatically stop after 15 minutes of inactivity:
+
+- Container is paused
+- State is preserved
+- Can be quickly restarted
+- No compute costs while stopped
+
+### 4. Archived State
+
+Sandboxes are archived after 30 minutes in stopped state:
+
+- Full state snapshot taken
+- Minimal storage cost
+- Can be restored when needed
+- Longer startup time (restoring from archive)
+
+### 5. Deletion
+
+Sandboxes can be permanently deleted:
+
+```python
+# backend/core/sandbox/sandbox.py:129-144
+async def delete_sandbox(sandbox_id: str) -> bool:
+    sandbox = await daytona.get(sandbox_id)
+    await daytona.delete(sandbox)
+    return True
+```
+
+Reference: `backend/core/sandbox/sandbox.py:129-144`
+
+## Getting or Starting Sandboxes
+
+The platform automatically manages sandbox state:
+
+```python
+# backend/core/sandbox/sandbox.py:34-66
+async def get_or_start_sandbox(sandbox_id: str) -> AsyncSandbox:
+    sandbox = await daytona.get(sandbox_id)
+    
+    # Check if sandbox needs to be started
+    if sandbox.state in [SandboxState.ARCHIVED, SandboxState.STOPPED, SandboxState.ARCHIVING]:
+        logger.info(f"Sandbox is in {sandbox.state} state. Starting...")
+        await daytona.start(sandbox)
+        
+        # Wait for sandbox to reach STARTED state
+        for _ in range(30):
+            await asyncio.sleep(1)
+            sandbox = await daytona.get(sandbox_id)
+            if sandbox.state == SandboxState.STARTED:
+                break
+        
+        # Start supervisord for background services
+        await start_supervisord_session(sandbox)
+    
+    return sandbox
+```
+
+Reference: `backend/core/sandbox/sandbox.py:34-66`
+
+## Supervisord Management
+
+Supervisord manages background services in the sandbox:
+
+```python
+# backend/core/sandbox/sandbox.py:68-80
+async def start_supervisord_session(sandbox: AsyncSandbox):
+    session_id = "supervisord-session"
+    try:
+        await sandbox.process.create_session(session_id)
+        await sandbox.process.execute_session_command(
+            session_id, 
+            SessionExecuteRequest(
+                command="exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf",
+                var_async=True
+            )
+        )
+        logger.info("Supervisord started successfully")
+    except Exception as e:
+        logger.warning(f"Could not start supervisord: {str(e)}")
+```
+
+Reference: `backend/core/sandbox/sandbox.py:68-80`
+
+## Sandbox States
+
+Daytona manages sandboxes through several states:
+
+```python
+class SandboxState(Enum):
+    STARTED = "started"        # Running and ready
+    STOPPED = "stopped"        # Paused, can resume quickly
+    ARCHIVING = "archiving"    # Being archived
+    ARCHIVED = "archived"      # Stored snapshot
+```
+
+## Project-Sandbox Relationship
+
+Each project can have one sandbox:
+
+```
+Project
+  └── Sandbox (optional)
+       ├── /workspace directory
+       ├── Chrome browser
+       ├── VNC server
+       └── Background services
+```
+
+Multiple threads within a project share the same sandbox, allowing:
+
+- Persistent file storage across conversations
+- Shared environment state
+- Long-running services
+- Collaborative workspace
+
+## Sandbox Configuration
+
+### Environment Variables
+
+Sandboxes are configured with environment variables:
+
+```python
+env_vars = {
+    "CHROME_PERSISTENT_SESSION": "true",
+    "RESOLUTION": "1048x768x24",
+    "RESOLUTION_WIDTH": "1048",
+    "RESOLUTION_HEIGHT": "768",
+    "VNC_PASSWORD": password,
+    "ANONYMIZED_TELEMETRY": "false",
+    "CHROME_DEBUGGING_PORT": "9222",
+    "CHROME_DEBUGGING_HOST": "localhost",
+}
+```
+
+Reference: `backend/core/sandbox/sandbox.py:97-109`
+
+### Resource Limits
+
+Sandboxes can be configured with resource limits:
+
+```python
+resources = Resources(
+    cpu=2,      # CPU cores
+    memory=4,   # GB of RAM
+    disk=5,     # GB of disk
+)
+```
+
+(Currently commented out in production, using default allocation)
+
+Reference: `backend/core/sandbox/sandbox.py:110-114`
+
+### Auto-Stop and Archive
+
+Sandboxes automatically manage their lifecycle:
+
+```python
+params = CreateSandboxFromSnapshotParams(
+    auto_stop_interval=15,    # Stop after 15 minutes inactive
+    auto_archive_interval=30,  # Archive after 30 minutes stopped
+)
+```
+
+Reference: `backend/core/sandbox/sandbox.py:115-116`
+
+## Sandbox Tools
+
+Agents interact with sandboxes through specialized tools:
+
+### Shell Tool
+
+Execute commands in the sandbox:
+
+```python
+from core.tools.sb_shell_tool import SandboxShellTool
+
+result = await shell_tool.execute(
+    command="ls -la /workspace"
+)
+```
+
+### Files Tool
+
+Manage files and directories:
+
+```python
+from core.tools.sb_files_tool import SandboxFilesTool
+
+result = await files_tool.write_file(
+    path="/workspace/app.py",
+    content="print('Hello, world!')"
+)
+```
+
+### File Reader Tool
+
+Read file contents:
+
+```python
+from core.tools.sb_file_reader_tool import SandboxFileReaderTool
+
+content = await file_reader.read(
+    path="/workspace/config.json"
+)
+```
+
+### Other Sandbox Tools
+
+- **Vision Tool**: Analyze images and screenshots
+- **Image Edit Tool**: Manipulate images
+- **Presentation Tool**: Create and edit presentations
+- **Spreadsheet Tool**: Work with spreadsheets
+- **Git Sync Tool**: Version control operations
+- **Upload Tool**: Upload files to sandbox
+- **Expose Tool**: Create public URLs for services
+- **Knowledge Base Tool**: Access project knowledge
+
+Reference: `backend/core/tools/tool_registry.py:11-24`
+
+## Customizing Sandboxes
+
+You can customize the sandbox environment for your needs:
+
+### 1. Modify Docker Image
+
+Edit files in the `docker/` directory:
+
+```bash
+cd backend/core/sandbox/docker
+# Edit Dockerfile, supervisord.conf, etc.
+```
+
+### 2. Build Custom Image
+
+```bash
+docker compose build
+docker push kortix/suna:0.1.3.30
+```
+
+### 3. Create Daytona Snapshot
+
+Create a new snapshot in Daytona with your custom image.
+
+### 4. Update Configuration
+
+Update the snapshot name in:
+
+- `backend/core/sandbox/sandbox.py`
+- `backend/utils/config.py`
+- Daytona deployment configuration
+
+Reference: `backend/core/sandbox/README.md:14-47`
+
+## Sandbox API
+
+The sandbox API provides comprehensive control:
+
+### Sandbox Operations
+
+- **Create**: `daytona.create(params)`
+- **Get**: `daytona.get(sandbox_id)`
+- **Start**: `daytona.start(sandbox)`
+- **Stop**: `daytona.stop(sandbox)`
+- **Delete**: `daytona.delete(sandbox)`
+
+### Process Management
+
+- **Create session**: `sandbox.process.create_session(session_id)`
+- **Execute command**: `sandbox.process.execute_session_command(session_id, request)`
+- **Stream output**: Real-time command output
+
+### File Operations
+
+- **Read file**: `sandbox.fs.read_file(path)`
+- **Write file**: `sandbox.fs.write_file(path, content)`
+- **List directory**: `sandbox.fs.list_dir(path)`
+
+Reference: `backend/core/sandbox/api.py`
+
+## Web Server Access
+
+Sandboxes include a web server on port 8080:
+
+- Serves files from `/workspace` directory
+- Publicly accessible when sandbox is running
+- Useful for hosting web apps, APIs, and static sites
+
+### Example: Serving HTML
+
+```python
+# Agent writes HTML file
+await files_tool.write_file(
+    path="/workspace/index.html",
+    content="<h1>Hello from sandbox!</h1>"
+)
+
+# File is now accessible at:
+# https://{sandbox-id}.daytona.app:8080/index.html
+```
+
+Reference: `backend/core/sandbox/README.md:10`
+
+## Performance Considerations
+
+### Cold Start Time
+
+Sandbox state affects startup time:
+
+- **Already running**: Instant (0ms)
+- **Stopped**: Fast (~1-3 seconds)
+- **Archived**: Slower (~10-30 seconds)
+
+### Cost Optimization
+
+The auto-stop and auto-archive intervals optimize costs:
+
+1. Active use: Full compute cost
+2. After 15min inactive: Stops (no compute cost)
+3. After 30min stopped: Archives (minimal storage cost)
+
+### Session Management
+
+Supervisord sessions persist background processes:
+
+- Database servers
+- Development servers
+- Background workers
+- System services
+
+## Security
+
+### Isolation
+
+Each sandbox is fully isolated:
+
+- Separate containers
+- Network isolation (configurable)
+- File system isolation
+- Resource limits
+
+### Access Control
+
+Sandboxes are tied to projects:
+
+- Only project owner can access
+- VNC password protected
+- API key authentication required
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Tools" icon="wrench" href="/concepts/tools">
+    Learn about sandbox tools that agents use
+  </Card>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    Understand how agents execute in sandboxes
+  </Card>
+  <Card title="Threads" icon="messages" href="/concepts/threads">
+    See how threads relate to sandboxes
+  </Card>
+  <Card title="Projects" icon="folder" href="/api-reference/projects">
+    Explore project management
+  </Card>
+</CardGroup>

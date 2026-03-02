@@ -1,0 +1,373 @@
+---
+title: Knowledge Base
+description: Upload and organize files to enhance your agents with custom knowledge and context
+---
+
+The Knowledge Base feature allows you to upload documents, PDFs, text files, and other content that your agents can reference during conversations. This enables your agents to answer questions and perform tasks using your organization's specific information.
+
+## How It Works
+
+Kortix automatically processes uploaded files to make them searchable and accessible to your agents:
+
+1. **Upload files** to organized folders
+2. **AI generates summaries** of each file's content
+3. **Assign knowledge** to specific agents
+4. **Agents retrieve context** when relevant to user queries
+
+## Creating Folders
+
+Organize your knowledge base with folders:
+
+<Steps>
+  <Step title="Navigate to Knowledge Base">
+    Access the Knowledge Base section from your dashboard
+  </Step>
+  
+  <Step title="Create a folder">
+    Click "New Folder" and provide a name and optional description
+  </Step>
+  
+  <Step title="Upload files">
+    Add documents, PDFs, or text files to your folder
+  </Step>
+</Steps>
+
+### Folder Management
+
+Each folder can contain multiple files and be assigned to one or more agents:
+
+```bash
+GET /api/knowledge-base/folders
+```
+
+**Response:**
+```json
+{
+  "folders": [
+    {
+      "folder_id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Product Documentation",
+      "description": "Technical docs and user guides",
+      "entry_count": 12,
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+## Uploading Files
+
+### Supported File Types
+
+The knowledge base supports multiple file formats:
+
+- **Documents**: `.txt`, `.md`, `.pdf`, `.docx`
+- **Data**: `.json`, `.csv`, `.xml`, `.yml`
+- **Code**: `.py`, `.js`, `.java`, and other text-based formats
+
+### File Size Limits
+
+- **Maximum file size**: 50MB per file
+- **Total storage**: 50MB per account (across all files)
+
+### Upload via API
+
+```bash
+POST /api/knowledge-base/folders/{folder_id}/upload
+Content-Type: multipart/form-data
+
+file: [binary file data]
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "entry_id": "660e8400-e29b-41d4-a716-446655440000",
+  "filename": "product-guide.pdf",
+  "processing": true
+}
+```
+
+<Note>
+  File processing happens in the background. The AI generates a summary within seconds, which you can view in the file details.
+</Note>
+
+## File Processing
+
+When you upload a file, Kortix processes it automatically:
+
+### Content Extraction
+
+The system extracts text from various file formats:
+
+<CodeGroup>
+```python file_processor.py (lines 426-468)
+def _extract_content(self, file_content: bytes, filename: str, mime_type: str) -> str:
+    """Extract text content from file bytes."""
+    file_extension = Path(filename).suffix.lower()
+    
+    # Handle text-based files
+    if (file_extension in ['.txt', '.json', '.xml', '.csv'] 
+        or mime_type.startswith('text/')):
+        detected = chardet.detect(file_content)
+        encoding = detected.get('encoding', 'utf-8')
+        return file_content.decode(encoding)
+    
+    # Handle PDFs
+    elif file_extension == '.pdf':
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+        return '\n\n'.join(page.extract_text() for page in pdf_reader.pages)
+    
+    # Handle Word documents
+    elif file_extension == '.docx':
+        doc = docx.Document(io.BytesIO(file_content))
+        return '\n'.join(paragraph.text for paragraph in doc.paragraphs)
+```
+</CodeGroup>
+
+### AI Summary Generation
+
+An AI model analyzes the content and generates a concise summary:
+
+<CodeGroup>
+```python file_processor.py (lines 278-306)
+async def _generate_summary(self, content: str, filename: str) -> str:
+    prompt = f"""Analyze this file and create a concise, actionable summary.
+
+File: {filename}
+Content: {content}
+
+Generate a 2-3 sentence summary that captures:
+1. What this file contains
+2. Key information or purpose  
+3. When this knowledge would be useful
+
+Keep it under 200 words and make it actionable for context injection."""
+    
+    response = await make_llm_api_call(
+        messages=[{"role": "user", "content": prompt}],
+        model_name="openrouter/google/gemini-2.5-flash-lite",
+        temperature=0.1,
+        max_tokens=300,
+        stream=False,
+    )
+    
+    return response.choices[0].message.content.strip()
+```
+</CodeGroup>
+
+## Assigning Knowledge to Agents
+
+Connect your knowledge base to specific agents:
+
+### View Agent Assignments
+
+```bash
+GET /api/knowledge-base/agents/{agent_id}/assignments
+```
+
+**Response:**
+```json
+{
+  "entry_id_1": true,
+  "entry_id_2": true,
+  "entry_id_3": false
+}
+```
+
+### Update Agent Assignments
+
+```bash
+POST /api/knowledge-base/agents/{agent_id}/assignments
+Content-Type: application/json
+
+{
+  "entry_ids": [
+    "entry_id_1",
+    "entry_id_2"
+  ]
+}
+```
+
+<Warning>
+  Updating assignments clears existing assignments and replaces them with the new list. Always include all entry IDs you want assigned.
+</Warning>
+
+## Managing Entries
+
+### List Files in a Folder
+
+```bash
+GET /api/knowledge-base/folders/{folder_id}/entries
+```
+
+**Response:**
+```json
+{
+  "entries": [
+    {
+      "entry_id": "660e8400-e29b-41d4-a716-446655440000",
+      "filename": "api-documentation.md",
+      "summary": "Comprehensive API reference...",
+      "file_size": 45678,
+      "created_at": "2024-01-15T10:35:00Z"
+    }
+  ]
+}
+```
+
+### Update Entry Summary
+
+You can manually edit the AI-generated summary:
+
+```bash
+PATCH /api/knowledge-base/entries/{entry_id}
+Content-Type: application/json
+
+{
+  "summary": "Updated summary with more specific information"
+}
+```
+
+### Download File Content
+
+```bash
+GET /api/knowledge-base/entries/{entry_id}/content
+```
+
+**Response:**
+```json
+{
+  "entry_id": "660e8400-e29b-41d4-a716-446655440000",
+  "filename": "document.pdf",
+  "file_size": 45678,
+  "mime_type": "application/pdf",
+  "content": "Extracted text content...",
+  "is_binary": false
+}
+```
+
+### Move Files Between Folders
+
+```bash
+PUT /api/knowledge-base/entries/{entry_id}/move
+Content-Type: application/json
+
+{
+  "folder_id": "new-folder-id"
+}
+```
+
+### Delete Files
+
+```bash
+DELETE /api/knowledge-base/entries/{entry_id}
+```
+
+## How Agents Use Knowledge
+
+When assigned to an agent, knowledge base content is automatically:
+
+1. **Indexed** for semantic search
+2. **Retrieved** when relevant to user queries
+3. **Injected** into the agent's context
+4. **Cached** for performance
+
+### Cache Invalidation
+
+The system automatically invalidates caches when:
+- Files are added or removed
+- Summaries are updated
+- Agent assignments change
+- Folders are deleted
+
+<CodeGroup>
+```python api.py (lines 484-494)
+# Invalidate KB context cache for all agents
+try:
+    from core.cache.runtime_cache import invalidate_kb_context_cache
+    assignments_result = await client.table('agent_knowledge_entry_assignments') \
+        .select('agent_id').eq('entry_id', entry_id).execute()
+    
+    agent_ids = set(row['agent_id'] for row in assignments_result.data)
+    for agent_id in agent_ids:
+        await invalidate_kb_context_cache(agent_id)
+    logger.debug(f"Invalidated KB cache for {len(agent_ids)} agents")
+except Exception as e:
+    logger.warning(f"Failed to invalidate KB cache: {e}")
+```
+</CodeGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Organize with purpose">
+    Create folders that align with specific use cases or agent responsibilities. For example:
+    - "Customer Support" folder for support agents
+    - "Product Specs" folder for sales agents
+    - "Engineering Docs" folder for technical agents
+  </Accordion>
+
+  <Accordion title="Keep summaries clear">
+    The AI-generated summaries help agents understand when to use each document. Review and edit summaries to ensure they're accurate and helpful.
+  </Accordion>
+
+  <Accordion title="Monitor file sizes">
+    Stay within the 50MB total limit by:
+    - Removing outdated files
+    - Compressing large documents
+    - Splitting large files into smaller, focused documents
+  </Accordion>
+
+  <Accordion title="Use descriptive filenames">
+    Clear filenames help both you and the AI understand content at a glance:
+    - Good: `customer-onboarding-guide-v2.pdf`
+    - Bad: `doc1.pdf`
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Upload Fails
+
+- **Check file size**: Ensure the file is under 50MB
+- **Check total storage**: Verify you haven't exceeded the 50MB account limit
+- **Verify file type**: Only supported formats can be uploaded
+
+### Summary Not Generated
+
+- **Wait for processing**: Background processing can take 10-30 seconds
+- **Check file content**: Empty or corrupted files won't generate meaningful summaries
+- **Review logs**: Server logs will show any processing errors
+
+### Agent Not Using Knowledge
+
+- **Verify assignment**: Ensure the entry is assigned to the agent
+- **Check query relevance**: Knowledge is only retrieved when semantically relevant
+- **Clear cache**: Try invalidating the agent's cache manually
+
+## API Reference
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/knowledge-base/folders` | List all folders |
+| POST | `/knowledge-base/folders` | Create a folder |
+| PUT | `/knowledge-base/folders/{id}` | Update folder |
+| DELETE | `/knowledge-base/folders/{id}` | Delete folder |
+| POST | `/knowledge-base/folders/{id}/upload` | Upload file |
+| GET | `/knowledge-base/folders/{id}/entries` | List folder entries |
+| GET | `/knowledge-base/entries/{id}/content` | Get file content |
+| PATCH | `/knowledge-base/entries/{id}` | Update entry |
+| DELETE | `/knowledge-base/entries/{id}` | Delete entry |
+| PUT | `/knowledge-base/entries/{id}/move` | Move entry |
+| GET | `/knowledge-base/agents/{id}/assignments` | Get agent assignments |
+| POST | `/knowledge-base/agents/{id}/assignments` | Update assignments |
+
+<Card title="See also" icon="link">
+  - [Agent Configuration](/agents/agent-builder)
+  - [Memory System](/features/memory)
+  - [API Authentication](/api/authentication)
+</Card>

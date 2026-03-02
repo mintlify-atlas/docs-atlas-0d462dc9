@@ -1,0 +1,439 @@
+---
+title: Web Intelligence
+description: Search the web, scrape websites, and gather up-to-date information from across the internet
+---
+
+## Overview
+
+Kortix agents can search the internet, extract content from web pages, and gather current information beyond their training data. This capability enables agents to research topics, fact-check claims, gather news, and collect data from multiple online sources.
+
+Powered by Tavily for web search and Firecrawl for content extraction, this tool provides comprehensive web intelligence capabilities.
+
+## Core Functions
+
+### Web Search
+
+```python
+# Single query
+web_search(
+    query="Tesla Model 3 2025 specs",
+    num_results=5
+)
+
+# Batch queries (efficient)
+web_search(
+    query=["Tesla news 2025", "Tesla stock", "Tesla products"],
+    num_results=5
+)
+```
+
+Searches the web for current information. Supports both single and batch queries.
+
+### Scrape Webpage
+
+```python
+# Single URL
+scrape_webpage(urls="https://example.com/article")
+
+# Multiple URLs (efficient)
+scrape_webpage(
+    urls="https://example.com/page1,https://example.com/page2,https://example.com/page3",
+    include_html=False
+)
+```
+
+Fetches and converts web page content to clean markdown format.
+
+## Real-World Examples
+
+### Example 1: Current Events Research
+
+```python
+# Search for recent information
+result = web_search(
+    query="artificial intelligence breakthroughs 2025",
+    num_results=10
+)
+
+# Result includes:
+# - titles: List of article titles
+# - urls: Direct links to sources
+# - content: Relevant excerpts
+# - answer: AI-generated summary
+# - images: Related images with OCR
+# - publication dates
+```
+
+### Example 2: Multi-Topic Research (Batch Mode)
+
+```python
+# Research multiple topics concurrently
+results = web_search(
+    query=[
+        "Python async best practices 2025",
+        "FastAPI performance optimization",
+        "PostgreSQL connection pooling"
+    ],
+    num_results=5
+)
+
+# All queries execute in parallel
+# Results contain separate data for each query
+```
+
+### Example 3: Deep Content Extraction
+
+```python
+# First, search for relevant sources
+search_results = web_search(
+    query="machine learning model deployment",
+    num_results=5
+)
+
+# Extract URLs from results
+urls = [result['url'] for result in search_results['results'][:3]]
+
+# Scrape all pages at once
+content = scrape_webpage(
+    urls=",".join(urls)
+)
+
+# Content saved to /workspace/scrape/ as JSON files
+# Each file contains:
+# - title: Page title
+# - url: Source URL
+# - text: Full page content in markdown
+# - metadata: Publication date, author, etc.
+```
+
+### Example 4: Image Search with OCR
+
+```python
+# Search returns images with descriptions
+result = web_search(
+    query="architecture diagrams microservices",
+    num_results=5
+)
+
+# Result includes enriched images:
+for image in result['images']:
+    print(f"URL: {image['url']}")
+    print(f"Dimensions: {image['width']}x{image['height']}")
+    print(f"Description: {image['description']}")  # From OCR + vision model
+```
+
+## Implementation Details
+
+From the source code (`web_search_tool.py:102-800`):
+
+```python
+@tool_metadata(
+    display_name="WebSearch",
+    description="Search the web and use the results to inform responses with up-to-date information",
+    icon="Search",
+    color="bg-green-100 dark:bg-green-800/50"
+)
+class SandboxWebSearchTool(SandboxToolsBase):
+    """Tool for performing web searches using Tavily API and web scraping using Firecrawl."""
+```
+
+### Batch Search Performance
+
+From `web_search_tool.py:205-224`:
+
+```python
+if is_batch:
+    # Execute all searches concurrently
+    start_time = time.time()
+    tasks = [
+        self._execute_single_search(q, num_results) 
+        for q in queries
+    ]
+    search_results = await asyncio.gather(*tasks, return_exceptions=True)
+    elapsed_time = time.time() - start_time
+    logging.info(f"Batch search completed in {elapsed_time:.2f}s (concurrent execution)")
+```
+
+Batch mode executes all queries in parallel, dramatically improving performance.
+
+### Image Enrichment with Vision AI
+
+From `web_search_tool.py:358-514`:
+
+```python
+async def _enrich_images_with_metadata(self, images: list) -> list:
+    """
+    Enrich image URLs with OCR text and dimensions.
+    Downloads all images and runs OCR IN PARALLEL for speed.
+    """
+    # Process all images in parallel
+    async with get_http_client() as client:
+        tasks = [self._enrich_single_image(img_url, client) for img_url in valid_images]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+```
+
+Images are analyzed using the Moondream2 vision model to extract text and descriptions:
+
+```python
+async def _describe_image(self, image_bytes: bytes, content_type: str) -> str:
+    """
+    Get image description using Moondream2 vision model.
+    Runs in ~2 seconds on Replicate GPU, includes text extraction.
+    """
+    output = replicate.run(
+        "lucataco/moondream2:72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31",
+        input={
+            "image": data_url,
+            "prompt": "Describe this image in detail. Include any text visible in the image."
+        }
+    )
+```
+
+### Web Scraping with Firecrawl
+
+From `web_search_tool.py:649-781`:
+
+```python
+async def _scrape_single_url(self, url: str, include_html: bool = False) -> dict:
+    """Helper function to scrape a single URL and return the result information."""
+    
+    async with get_http_client() as client:
+        headers = {
+            "Authorization": f"Bearer {self.firecrawl_api_key}",
+            "Content-Type": "application/json",
+        }
+        
+        # Determine formats to request
+        formats = ["markdown"]
+        if include_html:
+            formats.append("html")
+        
+        payload = {
+            "url": url,
+            "formats": formats
+        }
+        
+        response = await client.post(
+            f"{self.firecrawl_url}/v1/scrape",
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+```
+
+### Retry Logic for Reliability
+
+From `web_search_tool.py:683-712`:
+
+```python
+# Use longer timeout and retry logic for more reliability
+max_retries = 3
+timeout_seconds = 30
+retry_count = 0
+
+while retry_count < max_retries:
+    try:
+        response = await client.post(
+            f"{self.firecrawl_url}/v1/scrape",
+            json=payload,
+            headers=headers,
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        data = response.json()
+        break
+    except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ReadError) as timeout_err:
+        retry_count += 1
+        if retry_count >= max_retries:
+            raise Exception(f"Request timed out after {max_retries} attempts")
+        # Exponential backoff
+        await asyncio.sleep(2 ** retry_count)
+```
+
+## Search Results Format
+
+### Single Search Response
+
+```json
+{
+  "query": "AI developments 2025",
+  "results": [
+    {
+      "title": "Major AI Breakthrough in 2025",
+      "url": "https://example.com/article",
+      "content": "Excerpt from the article...",
+      "score": 0.95,
+      "published_date": "2025-01-15"
+    }
+  ],
+  "answer": "AI-generated summary of findings",
+  "images": [
+    {
+      "url": "https://example.com/image.jpg",
+      "width": 1920,
+      "height": 1080,
+      "description": "Diagram showing neural network architecture"
+    }
+  ],
+  "elapsed_time": 1.23
+}
+```
+
+### Batch Search Response
+
+```json
+{
+  "batch_mode": true,
+  "total_queries": 3,
+  "elapsed_time": 2.45,
+  "results": [
+    {
+      "query": "Topic 1",
+      "success": true,
+      "results": [...],
+      "answer": "...",
+      "images": [...]
+    },
+    {
+      "query": "Topic 2",
+      "success": true,
+      "results": [...]
+    }
+  ]
+}
+```
+
+## Scraped Content Format
+
+Scraped pages are saved to `/workspace/scrape/` as JSON:
+
+```json
+{
+  "title": "Article Title",
+  "url": "https://example.com/article",
+  "text": "# Heading\n\nFull article content in markdown...",
+  "metadata": {
+    "author": "John Doe",
+    "published_date": "2025-01-15",
+    "description": "Article meta description"
+  },
+  "html": "<html>...</html>"  // Optional, if include_html=True
+}
+```
+
+## Best Practices
+
+### 1. Always Use Batch Mode
+
+```python
+# ❌ BAD: Multiple separate searches
+web_search(query="topic 1")
+web_search(query="topic 2")
+web_search(query="topic 3")
+
+# ✅ GOOD: Single batch search
+web_search(query=["topic 1", "topic 2", "topic 3"])
+```
+
+### 2. Include Current Year in Queries
+
+```python
+# ✅ GOOD: Specific year for recent info
+web_search(query="Python best practices 2025")
+
+# ❌ BAD: May return outdated results
+web_search(query="Python best practices")
+```
+
+### 3. Batch URL Scraping
+
+```python
+# ✅ GOOD: Scrape multiple URLs at once
+scrape_webpage(
+    urls="https://site1.com,https://site2.com,https://site3.com"
+)
+
+# ❌ BAD: Separate calls
+scrape_webpage(urls="https://site1.com")
+scrape_webpage(urls="https://site2.com")
+```
+
+### 4. Always Cite Sources
+
+<Warning>
+**Critical Requirement**: After answering a question using web search, MUST include a "Sources:" section with markdown links.
+</Warning>
+
+```markdown
+[Your answer based on research]
+
+Sources:
+- [Title 1](https://example.com/1)
+- [Title 2](https://example.com/2)
+- [Title 3](https://example.com/3)
+```
+
+### 5. Don't Override Browser-Extracted Data
+
+```python
+# If you already browsed a specific site:
+browser_navigate_to(url="https://example.io")
+features = browser_extract_content(instruction="get features")
+
+# ✅ GOOD: Use extracted data as primary source
+# ❌ BAD: Don't override with generic web search
+```
+
+## When to Use Web Search vs Browser
+
+<CardGroup cols={2}>
+  <Card title="Use Web Search" icon="search">
+    - Finding information across multiple sources
+    - Current events and news
+    - Comparing multiple perspectives
+    - Research questions
+    - Fact-checking
+  </Card>
+  
+  <Card title="Use Browser" icon="globe">
+    - Interacting with a specific website
+    - Multi-step flows requiring clicks
+    - Form submissions
+    - Dynamic content requiring JavaScript
+    - Visual inspection needed
+  </Card>
+</CardGroup>
+
+## Image Processing
+
+If `REPLICATE_API_TOKEN` is configured, images are enriched with:
+
+- **Dimensions**: Width and height in pixels
+- **OCR**: Text visible in the image
+- **Description**: AI-generated description using Moondream2 vision model
+
+Without the token, images include URL and dimensions only.
+
+## Configuration
+
+Web intelligence requires:
+
+```bash
+# Required for web search
+TAVILY_API_KEY=your_tavily_key
+
+# Required for web scraping
+FIRECRAWL_API_KEY=your_firecrawl_key
+FIRECRAWL_URL=https://api.firecrawl.dev
+
+# Optional for image OCR/description
+REPLICATE_API_TOKEN=your_replicate_token
+```
+
+## Limitations
+
+- Web search limited to 50 results per query
+- Scraping timeout: 30 seconds per URL with 3 retries
+- Image enrichment requires REPLICATE_API_TOKEN
+- Some websites may block scraping
+- For GitHub URLs, prefer using `gh` CLI instead

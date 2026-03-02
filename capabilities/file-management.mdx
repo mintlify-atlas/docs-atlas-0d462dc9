@@ -1,0 +1,412 @@
+---
+title: File Management
+description: Create, read, edit, and delete files in the workspace with intelligent content processing
+---
+
+## Overview
+
+Kortix agents have comprehensive file system capabilities within the `/workspace` directory. Agents can create new files, read existing ones, make precise edits, and manage the file structure - all essential for building projects, processing data, and creating deliverables.
+
+## Core Functions
+
+The file management tool provides several essential operations:
+
+### Create Files
+
+```python
+create_file(
+    file_path="src/main.py",
+    file_contents="print('Hello World')",
+    permissions="644"
+)
+```
+
+Creates a new file with specified content. Automatically creates parent directories if needed.
+
+### Read Files
+
+Reading is handled through a separate read tool that provides file contents with line numbers for precise editing.
+
+### Edit Files (AI-Powered)
+
+```python
+edit_file(
+    target_file="src/main.py",
+    instructions="I'm adding error handling to the login function",
+    code_edit="""
+// ... existing code ...
+try:
+    login_user(username, password)
+except AuthError as e:
+    logger.error(f"Login failed: {e}")
+    return False
+// ... existing code ...
+"""
+)
+```
+
+Performs AI-powered intelligent edits using the Morph API. Only specify changed lines.
+
+### String Replace
+
+```python
+str_replace(
+    file_path="config.json",
+    old_str='"debug": false',
+    new_str='"debug": true',
+    replace_all=False
+)
+```
+
+Performs exact string replacements. Use `replace_all=True` to replace all occurrences.
+
+### Full File Rewrite
+
+```python
+full_file_rewrite(
+    file_path="template.html",
+    file_contents="<html>...</html>",
+    permissions="644"
+)
+```
+
+Completely replaces file content. Use sparingly - prefer `edit_file` for modifications.
+
+### Delete Files
+
+```python
+delete_file(file_path="temp/cache.json")
+```
+
+Deletes a file from the workspace.
+
+## Real-World Examples
+
+### Example 1: Creating a Python Project
+
+```python
+# Create project structure
+create_file(
+    file_path="src/__init__.py",
+    file_contents=""
+)
+
+create_file(
+    file_path="src/main.py",
+    file_contents="""
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def main():
+    logger.info('Application started')
+    # TODO: Add application logic
+
+if __name__ == '__main__':
+    main()
+"""
+)
+
+create_file(
+    file_path="requirements.txt",
+    file_contents="""
+requests==2.31.0
+pandas==2.0.3
+"""
+)
+```
+
+### Example 2: Intelligent Code Editing
+
+```python
+# First, read the file to understand current state
+# (using read_file tool - not shown)
+
+# Then make precise edits
+edit_file(
+    target_file="src/api.py",
+    instructions="I'm adding rate limiting to the API endpoint",
+    code_edit="""
+import time
+from functools import wraps
+// ... existing code ...
+
+def rate_limit(max_calls=100, period=60):
+    def decorator(func):
+        calls = []
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            now = time.time()
+            calls[:] = [c for c in calls if c > now - period]
+            if len(calls) >= max_calls:
+                raise Exception("Rate limit exceeded")
+            calls.append(now)
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+// ... existing code ...
+@rate_limit(max_calls=50, period=60)
+def api_endpoint():
+// ... existing code ...
+"""
+)
+```
+
+### Example 3: Configuration Updates
+
+```python
+# Update multiple config values
+str_replace(
+    file_path="config/settings.json",
+    old_str='"environment": "development"',
+    new_str='"environment": "production"'
+)
+
+str_replace(
+    file_path="config/settings.json",
+    old_str='"log_level": "DEBUG"',
+    new_str='"log_level": "INFO"'
+)
+```
+
+### Example 4: HTML Preview Support
+
+```python
+# Create HTML file - automatically gets preview URL
+result = create_file(
+    file_path="dashboard.html",
+    file_contents="""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+</head>
+<body>
+    <h1>Analytics Dashboard</h1>
+    <!-- content -->
+</body>
+</html>
+"""
+)
+
+# Result includes preview URL on port 8080
+# Example: https://sandbox-id.daytona.app/dashboard.html
+```
+
+## Implementation Details
+
+From the source code (`sb_files_tool.py:79-689`):
+
+```python
+@tool_metadata(
+    display_name="Write & Edit",
+    description="Write and edit files in the workspace. Create new files or modify existing ones",
+    icon="FolderOpen",
+    color="bg-blue-100 dark:bg-blue-800/50",
+    is_core=True
+)
+class SandboxFilesTool(SandboxToolsBase):
+    """Tool for executing file system operations in a Daytona sandbox.
+    All operations are performed relative to the /workspace directory."""
+```
+
+### Path Handling
+
+All paths are relative to `/workspace`:
+
+```python
+def clean_path(self, path: str) -> str:
+    """Clean and normalize a path to be relative to /workspace"""
+    return clean_path(path, self.workspace_path)
+
+def _get_full_path(self, path: str) -> str:
+    """Get full absolute path relative to /workspace"""
+    cleaned = self.clean_path(path)
+    return f"{self.workspace_path}/{cleaned}"
+```
+
+### AI-Powered Editing
+
+The `edit_file` function uses the Morph API for intelligent code modifications:
+
+```python
+async def _call_morph_api(self, file_content: str, code_edit: str, 
+                         instructions: str, file_path: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Call Morph API to apply edits to file content.
+    Returns a tuple (new_content, error_message).
+    """
+    messages = [{
+        "role": "user", 
+        "content": f"<instruction>{instructions}</instruction>\n<code>{file_content}</code>\n<update>{code_edit}</update>"
+    }]
+    
+    # Use Morph API directly or fallback to OpenRouter
+    if morph_api_key:
+        response = await client.chat.completions.create(
+            model="morph-v3-large",
+            messages=messages,
+            temperature=0.0
+        )
+```
+
+### HTML Preview URLs
+
+When creating HTML files, preview URLs are automatically generated:
+
+```python
+if file_path.lower().endswith('.html'):
+    try:
+        website_link = await self.sandbox.get_preview_link(8080)
+        website_url = website_link.url
+        if not website_url.endswith('/'):
+            website_url += '/'
+        full_preview_url = f"{website_url}{file_path}"
+        message += f"\n\n✓ HTML file preview available at: {full_preview_url}"
+    except Exception as e:
+        logger.warning(f"Failed to get preview URL: {str(e)}")
+```
+
+## File Exclusions
+
+Certain files are automatically excluded from operations to prevent issues:
+
+- `.git/` directory contents
+- `node_modules/`
+- `.env` files (for security)
+- Binary files (images, PDFs, etc.)
+- Cache directories
+
+## Export to PDF
+
+HTML files can be exported to PDF:
+
+```python
+export_to_pdf(file_path="report.html")
+```
+
+Uses Playwright/Chromium for high-quality rendering. Output saved to `/workspace/downloads/`.
+
+From `sb_files_tool.py:625-688`:
+
+```python
+@openapi_schema({
+    "type": "function",
+    "function": {
+        "name": "export_to_pdf",
+        "description": "Export an HTML file to PDF format using high-quality Playwright/Chromium rendering."
+    }
+})
+async def export_to_pdf(self, file_path: str) -> ToolResult:
+    """Export an HTML file to PDF using sandbox Playwright rendering."""
+```
+
+## Edit File Format
+
+When using `edit_file`, use the special marker to indicate unchanged code:
+
+```python
+edit_file(
+    target_file="app.py",
+    instructions="I'm adding logging to the function",
+    code_edit="""
+import logging
+// ... existing code ...
+
+def process_data(data):
+    logging.info(f"Processing {len(data)} items")
+    // ... existing code ...
+    result = transform(data)
+    logging.debug(f"Transformation complete: {result}")
+    return result
+// ... existing code ...
+"""
+)
+```
+
+<Warning>
+**Important**: Include 3-5 lines of context around each change. DO NOT omit code without using the `// ... existing code ...` marker, or the model may inadvertently delete lines.
+</Warning>
+
+## Best Practices
+
+### 1. Always Read Before Editing
+
+```python
+# ❌ BAD: Edit without reading
+edit_file(target_file="app.py", ...)
+
+# ✅ GOOD: Read first to understand current state
+read_file(file_path="app.py")
+edit_file(target_file="app.py", ...)
+```
+
+### 2. Prefer Editing Over Rewriting
+
+```python
+# ✅ GOOD: Precise edits
+edit_file(target_file="config.py", instructions="...", code_edit="...")
+
+# ❌ BAD: Full rewrite for small changes
+full_file_rewrite(file_path="config.py", file_contents="...")
+```
+
+### 3. Use String Replace for Simple Changes
+
+```python
+# For simple replacements, str_replace is faster
+str_replace(
+    file_path="version.txt",
+    old_str="1.0.0",
+    new_str="1.1.0"
+)
+```
+
+### 4. Batch Edits in Single Call
+
+```python
+# ✅ GOOD: All edits in one call
+edit_file(
+    target_file="app.py",
+    instructions="Adding error handling and logging",
+    code_edit="""
+import logging
+// ... existing code ...
+FIRST_EDIT
+// ... existing code ...
+SECOND_EDIT
+// ... existing code ...
+THIRD_EDIT
+"""
+)
+
+# ❌ BAD: Multiple calls to same file
+edit_file(target_file="app.py", ...)
+edit_file(target_file="app.py", ...)  # Wasteful!
+```
+
+## Permissions
+
+Files are created with permission `644` by default. For executable files:
+
+```python
+create_file(
+    file_path="scripts/deploy.sh",
+    file_contents="#!/bin/bash\n...",
+    permissions="755"  # Executable
+)
+```
+
+## Configuration
+
+File editing with AI requires either:
+
+```bash
+MORPH_API_KEY=your_morph_key
+# OR
+OPENROUTER_API_KEY=your_openrouter_key
+```
+
+Without these, `edit_file` will fail but basic operations (create, delete, str_replace) still work.
